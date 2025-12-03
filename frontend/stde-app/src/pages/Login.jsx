@@ -1,22 +1,39 @@
-import { useState } from 'react';
-import '../css/Login.css';
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import authService from "../services/authService";
+import "../css/Login.css";
 
 export default function Login() {
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Login attempt:', { email, password });
-    // Add your login logic here
+    setError("");
+    setLoading(true);
+
+    try {
+      const response = await authService.login({ email, password });
+      console.log("Login successful:", response);
+      
+      // Redirect to AI Evaluate page after successful login
+      navigate("/ai-evaluate");
+    } catch (err) {
+      console.error("Login error:", err);
+      setError(err || "Invalid email or password. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="login-container">
-      {/* Left Panel - Dark Blue with Features */}
+      {/* Left Panel */}
       <div className="left-panel">
-        {/* Background Pattern */}
         <div className="background-pattern">
           <div className="pattern-box box-1"></div>
           <div className="pattern-box box-2"></div>
@@ -24,19 +41,23 @@ export default function Login() {
         </div>
 
         <div className="content">
-          <h1 className="title">
-            AI-Powered Documentation Analysis
-          </h1>
+          <h1 className="title">AI-Powered Documentation Analysis</h1>
           <p className="subtitle">
-            Revolutionize your software testing workflow with intelligent evaluation
-            and insights powered by advanced AI technology.
+            Revolutionize your software testing workflow with intelligent
+            evaluation and insights powered by advanced AI technology.
           </p>
 
           <div className="features">
             <div className="feature-item">
               <div className="checkmark">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M13.5 4L6 11.5L2.5 8" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path
+                    d="M13.5 4L6 11.5L2.5 8"
+                    stroke="white"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               </div>
               <p>Automated test case evaluation</p>
@@ -45,7 +66,13 @@ export default function Login() {
             <div className="feature-item">
               <div className="checkmark">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M13.5 4L6 11.5L2.5 8" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path
+                    d="M13.5 4L6 11.5L2.5 8"
+                    stroke="white"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               </div>
               <p>Comprehensive quality metrics</p>
@@ -54,7 +81,13 @@ export default function Login() {
             <div className="feature-item">
               <div className="checkmark">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M13.5 4L6 11.5L2.5 8" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path
+                    d="M13.5 4L6 11.5L2.5 8"
+                    stroke="white"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               </div>
               <p>Instant feedback and recommendations</p>
@@ -63,84 +96,115 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Right Panel - Login Form */}
+      {/* Right Panel */}
       <div className="right-panel">
         <div className="form-container">
-          {/* Logo */}
           <div className="logo">
             <div className="logo-icon">S</div>
             <span className="logo-text">STDE</span>
           </div>
 
-          {/* Welcome Text */}
           <div className="welcome">
             <h2>Welcome back</h2>
             <p>
-              Already have an account?{' '}
-              <a href="#">Sign up</a>
+              Don't have an account? <Link to="/register">Sign up</Link>
             </p>
           </div>
 
-          {/* Login Form */}
-          <div className="login-form">
+          <form className="login-form" onSubmit={handleSubmit}>
+            {error && (
+              <div className="error-message" style={{
+                backgroundColor: '#fee',
+                color: '#c33',
+                padding: '12px',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                fontSize: '14px'
+              }}>
+                {error}
+              </div>
+            )}
+
             <div className="form-group">
-              <label htmlFor="email">Email</label>
+              <label>Email</label>
               <input
-                id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your email"
                 required
+                disabled={loading}
               />
             </div>
 
             <div className="form-group">
               <div className="password-label">
-                <label htmlFor="password">Password</label>
+                <label>Password</label>
                 <div className="forget-link">
                   <a href="#">Forget?</a>
                 </div>
               </div>
+
               <div className="password-input">
                 <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   required
+                  disabled={loading}
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
                   className="toggle-password"
+                  onClick={() => setShowPassword(!showPassword)}
+                  disabled={loading}
                 >
                   {showPassword ? (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <line x1="1" y1="1" x2="23" y2="23" strokeWidth="2" strokeLinecap="round"/>
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24">
+                      <path
+                        d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                      <line
+                        x1="1"
+                        y1="1"
+                        x2="23"
+                        y2="23"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
                     </svg>
                   ) : (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <circle cx="12" cy="12" r="3" strokeWidth="2"/>
+                    <svg width="20" height="20" fill="none" viewBox="0 0 24 24">
+                      <path
+                        d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="3"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
                     </svg>
                   )}
                 </button>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleSubmit}
+            <button 
+              type="submit" 
               className="submit-btn"
+              disabled={loading}
             >
-              Sign in
+              {loading ? "Signing in..." : "Sign in"}
             </button>
-          </div>
+          </form>
 
-          {/* Footer */}
           <div className="footer">
             <p>Capstone Project 2025</p>
           </div>
