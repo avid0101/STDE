@@ -49,6 +49,11 @@ const authService = {
     return userStr ? JSON.parse(userStr) : null;
   },
 
+  // Get auth token (Added this method)
+  getToken: () => {
+    return localStorage.getItem('token');
+  },
+
   // Check if user is authenticated
   isAuthenticated: () => {
     return !!localStorage.getItem('token');
@@ -56,4 +61,3 @@ const authService = {
 };
 
 export default authService;
-
