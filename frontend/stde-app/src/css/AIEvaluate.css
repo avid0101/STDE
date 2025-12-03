@@ -25,6 +25,7 @@
   left: 0;
   top: 0;
   z-index: 100;
+  overflow-y: auto; /* ADDED: Allow sidebar to scroll if needed */
 }
 
 .sidebar-header {
@@ -77,6 +78,7 @@
   cursor: pointer;
   transition: all 0.2s;
   text-align: left;
+  text-decoration: none; /* ADDED: Remove underline from links */
 }
 
 .nav-item:hover {
@@ -98,7 +100,9 @@
   flex: 1;
   margin-left: 260px;
   padding: 2rem 2.5rem;
-  overflow-y: auto;
+  max-height: 100vh; /* ADDED: Constrain height */
+  overflow-y: auto; /* ADDED: Enable scrolling */
+  padding-bottom: 3rem; /* ADDED: Extra padding at bottom */
 }
 
 /* Header */
@@ -127,6 +131,63 @@
   font-size: 1.75rem;
   font-weight: 700;
   color: #1f2937;
+}
+
+/* Alert Messages - NEW */
+.alert {
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  animation: slideIn 0.3s ease;
+  position: relative;
+}
+
+.alert-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.alert-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  line-height: 1;
+  padding: 0;
+  color: inherit;
+}
+
+.alert-close:hover {
+  opacity: 1;
+}
+
+.alert-error {
+  background-color: #fee;
+  color: #c33;
+  border: 1px solid #fcc;
+}
+
+.alert-success {
+  background-color: #efe;
+  color: #3c3;
+  border: 1px solid #cfc;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Statistics Grid */
@@ -277,6 +338,13 @@
   background-color: #eef2ff;
 }
 
+.drop-zone.uploading {
+  opacity: 0.7;
+  pointer-events: none;
+  border-color: #5b6fe8;
+  background-color: #eef2ff;
+}
+
 .drop-icon {
   width: 4rem;
   height: 4rem;
@@ -318,12 +386,18 @@
   background-color: #4c5fd4;
 }
 
+.select-file-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* My Uploads Section */
 .my-uploads-section {
   background: white;
   border-radius: 0.75rem;
   padding: 2rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem; /* ADDED: Space at bottom */
 }
 
 .section-header {
@@ -353,15 +427,115 @@
 
 .uploads-list {
   min-height: 8rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .no-uploads {
   color: #9ca3af;
   font-size: 0.95rem;
   text-align: center;
+  padding: 2rem;
+}
+
+/* Documents Grid - NEW */
+.documents-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.document-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  transition: all 0.2s;
+}
+
+.document-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.document-icon-large {
+  font-size: 2.5rem;
+  flex-shrink: 0;
+}
+
+.document-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.document-filename {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-meta {
+  font-size: 0.8rem;
+  color: #666;
+  margin: 0 0 0.5rem 0;
+}
+
+.document-badge {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-uploaded {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.status-processing {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.status-completed {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.status-failed {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.document-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 6px;
+  transition: all 0.2s;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-btn:hover {
+  background-color: #fee2e2;
+  color: #dc2626;
 }
 
 /* Responsive Design */
@@ -400,5 +574,9 @@
 
   .drop-zone {
     padding: 2rem 1rem;
+  }
+
+  .documents-grid {
+    grid-template-columns: 1fr;
   }
 }
