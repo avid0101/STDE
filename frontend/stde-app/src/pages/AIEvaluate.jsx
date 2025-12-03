@@ -1,10 +1,38 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import '../css/AIEvaluate.css';
+import documentService from '../services/documentService';
+import authService from '../services/authService';
 
 export default function AIEvaluate() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('upload');
   const [dragActive, setDragActive] = useState(false);
+  
+  // NEW: Upload state
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [uploadSuccess, setUploadSuccess] = useState('');
+  const [documents, setDocuments] = useState([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(true);
+
+  // NEW: Load documents on mount
+  useEffect(() => {
+    loadDocuments();
+  }, []);
+
+  // NEW: Load user's documents
+  const loadDocuments = async () => {
+    try {
+      setLoadingDocuments(true);
+      const response = await documentService.getUserDocuments();
+      setDocuments(response.documents || []);
+    } catch (error) {
+      console.error('Error loading documents:', error);
+    } finally {
+      setLoadingDocuments(false);
+    }
+  };
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -32,14 +60,113 @@ export default function AIEvaluate() {
     }
   };
 
-  const handleFile = (file) => {
-    console.log('File selected:', file);
-    // Add your file upload logic here
+  // UPDATED: Now actually uploads the file
+  const handleFile = async (file) => {
+    // Clear previous messages
+    setUploadError('');
+    setUploadSuccess('');
+
+    if (!file) {
+      setUploadError('Please select a file');
+      return;
+    }
+
+    // Validate file type
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ];
+    
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError('Invalid file type. Only PDF, DOCX, and TXT files are allowed.');
+      return;
+    }
+
+    // Validate file size (10MB)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setUploadError('File size exceeds 10MB limit.');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      console.log('Uploading file:', file.name);
+
+      const response = await documentService.uploadDocument(file);
+      console.log('Upload response:', response);
+
+      setUploadSuccess(`Document "${file.name}" uploaded successfully!`);
+
+      // Reload documents list
+      await loadDocuments();
+
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setUploadSuccess('');
+      }, 5000);
+
+    } catch (error) {
+      console.error('Upload error:', error);
+      setUploadError(error.message || 'Failed to upload document');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleGoogleLink = () => {
     console.log('Google Link clicked');
-    // Add your Google Link logic here
+    // Add your Google Link logic here later
+    alert('Google Drive integration coming soon!');
+  };
+
+  // NEW: Delete document
+  const handleDeleteDocument = async (documentId, filename) => {
+    if (!window.confirm(`Are you sure you want to delete "${filename}"?`)) {
+      return;
+    }
+
+    try {
+      await documentService.deleteDocument(documentId);
+      setUploadSuccess(`Document "${filename}" deleted successfully!`);
+      await loadDocuments();
+
+      setTimeout(() => {
+        setUploadSuccess('');
+      }, 3000);
+    } catch (error) {
+      setUploadError(error.message || 'Failed to delete document');
+    }
+  };
+
+  // NEW: Helper functions
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
+  const getFileIcon = (fileType) => {
+    if (fileType === 'application/pdf') return '📄';
+    if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return '📝';
+    if (fileType === 'text/plain') return '📃';
+    return '📎';
+  };
+
+  const handleLogout = () => {
+    authService.logout();
+    navigate('/login');
   };
 
   return (
@@ -75,6 +202,13 @@ export default function AIEvaluate() {
             </svg>
             <span>Profile</span>
           </Link>
+
+          <button className="nav-item" onClick={handleLogout}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span>Logout</span>
+          </button>
         </nav>
       </div>
 
@@ -90,6 +224,23 @@ export default function AIEvaluate() {
           <h1 className="page-title">AI Evaluate</h1>
         </div>
 
+        {/* NEW: Success/Error Messages */}
+        {uploadError && (
+          <div className="alert alert-error">
+            <span className="alert-icon">⚠️</span>
+            {uploadError}
+            <button className="alert-close" onClick={() => setUploadError('')}>×</button>
+          </div>
+        )}
+
+        {uploadSuccess && (
+          <div className="alert alert-success">
+            <span className="alert-icon">✅</span>
+            {uploadSuccess}
+            <button className="alert-close" onClick={() => setUploadSuccess('')}>×</button>
+          </div>
+        )}
+
         {/* Statistics Cards */}
         <div className="stats-grid">
           <div className="stat-card">
@@ -100,8 +251,8 @@ export default function AIEvaluate() {
             </div>
             <div className="stat-content">
               <div className="stat-label">Documents</div>
-              <div className="stat-value">0</div>
-              <div className="stat-change positive">+0% than last week</div>
+              <div className="stat-value">{documents.length}</div>
+              <div className="stat-change positive">+{documents.length} uploaded</div>
             </div>
           </div>
 
@@ -161,7 +312,10 @@ export default function AIEvaluate() {
             </button>
             <button 
               className={`tab-btn ${activeTab === 'google' ? 'active' : ''}`}
-              onClick={() => setActiveTab('google')}
+              onClick={() => {
+                setActiveTab('google');
+                handleGoogleLink();
+              }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -171,7 +325,7 @@ export default function AIEvaluate() {
           </div>
 
           <div 
-            className={`drop-zone ${dragActive ? 'active' : ''}`}
+            className={`drop-zone ${dragActive ? 'active' : ''} ${uploading ? 'uploading' : ''}`}
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
@@ -182,25 +336,29 @@ export default function AIEvaluate() {
                 <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3v-8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
-            <p className="drop-text">Drop your testing documentation here</p>
-            <p className="drop-subtext">Supported formats: PDF, DOCX, TXT</p>
+            <p className="drop-text">
+              {uploading ? 'Uploading...' : 'Drop your testing documentation here'}
+            </p>
+            <p className="drop-subtext">Supported formats: PDF, DOCX, TXT (Max 10MB)</p>
             <input 
               type="file" 
               id="file-input" 
               accept=".pdf,.docx,.txt" 
               onChange={handleFileInput}
+              disabled={uploading}
               style={{ display: 'none' }}
             />
             <button 
               className="select-file-btn"
               onClick={() => document.getElementById('file-input').click()}
+              disabled={uploading}
             >
-              Select File
+              {uploading ? 'Uploading...' : 'Select File'}
             </button>
           </div>
         </div>
 
-        {/* My Uploads Section */}
+        {/* My Uploads Section - UPDATED */}
         <div className="my-uploads-section">
           <div className="section-header">
             <h2 className="section-title">My Uploads</h2>
@@ -213,7 +371,41 @@ export default function AIEvaluate() {
           </div>
           
           <div className="uploads-list">
-            <p className="no-uploads">No uploads yet. Start by uploading your first document.</p>
+            {loadingDocuments ? (
+              <p className="no-uploads">Loading documents...</p>
+            ) : documents.length === 0 ? (
+              <p className="no-uploads">No uploads yet. Start by uploading your first document.</p>
+            ) : (
+              <div className="documents-grid">
+                {documents.map((doc) => (
+                  <div key={doc.id} className="document-card">
+                    <div className="document-icon-large">
+                      {getFileIcon(doc.fileType)}
+                    </div>
+                    <div className="document-details">
+                      <h3 className="document-filename">{doc.filename}</h3>
+                      <p className="document-meta">
+                        {formatFileSize(doc.fileSize)} • {formatDate(doc.uploadDate)}
+                      </p>
+                      <span className={`document-badge status-${doc.status.toLowerCase()}`}>
+                        {doc.status}
+                      </span>
+                    </div>
+                    <div className="document-actions">
+                      <button 
+                        className="action-btn"
+                        onClick={() => handleDeleteDocument(doc.id, doc.filename)}
+                        title="Delete"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
