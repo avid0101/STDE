@@ -24,3 +24,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secrets - DO NOT COMMIT
+**/application-secrets.properties
+src/main/resources/application-secrets.properties
