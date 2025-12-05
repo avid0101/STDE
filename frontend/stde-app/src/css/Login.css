@@ -171,7 +171,7 @@ body {
   margin-left: 0.5rem;
   font-size: 1rem;
   font-weight: 600;
-  color: #1f2937;
+  color: #1f2937 !important;
 }
 
 .welcome {
