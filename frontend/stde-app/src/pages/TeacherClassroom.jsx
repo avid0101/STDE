@@ -1,7 +1,7 @@
-// src/components/TeacherClassroom.jsx
+// src/pages/TeacherClassroom.jsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Sidebar from "./Sidebar";
+import Sidebar from "../components/Sidebar";
 import "../css/TeacherClassroom.css";
 
 export default function TeacherClassroom() {
