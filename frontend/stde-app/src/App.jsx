@@ -10,6 +10,7 @@ import Profile from "./pages/Profile";
 import TestEvaluation from "./pages/TestEvaluation";
 import Classroom from "./pages/Classroom";
 import TeacherClassroom from "./pages/TeacherClassroom";
+import OAuthCallback from "./pages/OAuthCallback";
 
 // Components
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -20,6 +21,8 @@ export default function App() {
       {/* Redirect base URL */}
       <Route path="/" element={<Navigate to="/login/student" replace />} />
 
+      <Route path="/auth/callback" element={<OAuthCallback />} />
+      
       {/* AUTH ROUTES */}
       <Route path="/login/student" element={<Login />} />
       <Route path="/register/student" element={<Register />} />

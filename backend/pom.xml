@@ -143,6 +143,12 @@
 			<version>${modelmapper.version}</version>
 		</dependency>
 
+		<!-- OAuth2 Client -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-client</artifactId>
+		</dependency>
+
 		<!-- JWT: JJWT (io.jsonwebtoken) for JWT authentication -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>

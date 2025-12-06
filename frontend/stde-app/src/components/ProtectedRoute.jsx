@@ -5,16 +5,21 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   const isAuthenticated = authService.isAuthenticated();
   const user = authService.getCurrentUser();
 
+  // Not logged in at all
   if (!isAuthenticated || !user) {
     return <Navigate to="/login/student" replace />;
   }
 
-  // allowedRoles example: ["TEACHER"] or ["STUDENT"]
+  // Check role permissions
   if (allowedRoles && !allowedRoles.includes(user.userType)) {
-    // If wrong role, redirect to their main page
-    if (user.userType === "STUDENT") return <Navigate to="/ai-evaluate" replace />;
-    if (user.userType === "TEACHER") return <Navigate to="/teacher/classroom" replace />;
-    return <Navigate to="/login/student" replace />;
+    // Log out and redirect to correct login page
+    authService.logout();
+    
+    const redirectPath = user.userType === "TEACHER" 
+      ? "/login/teacher" 
+      : "/login/student";
+    
+    return <Navigate to={redirectPath} replace />;
   }
 
   return children;

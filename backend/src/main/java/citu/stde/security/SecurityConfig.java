@@ -25,36 +25,30 @@ public class SecurityConfig {
     private final CorsConfigurationSource corsConfigurationSource;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final UserDetailsService userDetailsService;
+    private final OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            // Enable CORS
             .cors(cors -> cors.configurationSource(corsConfigurationSource))
-            
-            // Disable CSRF (not needed for stateless JWT authentication)
             .csrf(csrf -> csrf.disable())
-            
-            // Set session management to stateless
             .sessionManagement(session -> 
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                // Changed: Allow sessions for OAuth2, but still stateless for JWT API calls
+                session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
             )
-            
-            // Configure authorization rules
             .authorizeHttpRequests(auth -> auth
-                // Allow authentication endpoints without authentication
                 .requestMatchers(
                     "/api/auth/**",
-                    "/api/auth/login",
-                    "/api/auth/register",
+                    "/api/oauth2/**",  // Added this for our new OAuth controller
+                    "/login/oauth2/**",
+                    "/oauth2/**",
                     "/error"
                 ).permitAll()
-                
-                // All other requests require authentication
                 .anyRequest().authenticated()
             )
-            
-            // Add JWT filter before UsernamePasswordAuthenticationFilter
+            .oauth2Login(oauth2 -> oauth2
+                .successHandler(oAuth2LoginSuccessHandler)
+            )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

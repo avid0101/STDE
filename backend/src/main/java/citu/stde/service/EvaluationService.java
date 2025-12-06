@@ -26,6 +26,9 @@ public class EvaluationService {
     private final DocumentRepository documentRepository;
     private final EvaluationRepository evaluationRepository;
 
+    // Toggle for content truncation
+    private final boolean ENABLE_TRUNCATION = false; // Set to false to send full content to AI
+
     @Transactional
     public EvaluationDTO evaluateDocument(UUID documentId, UUID userId) {
         // 1. Fetch Document
@@ -36,7 +39,13 @@ public class EvaluationService {
             throw new SecurityException("Unauthorized access to document");
         }
 
-        // 2. Handle Re-evaluation (Fixes "Duplicate Key" error)
+        // 2. Validate Document Type (AI-based detection)
+        String safeContent = truncateContent(doc.getContent());
+        if (!isValidSoftwareTestingDocument(safeContent)) {
+            throw new IllegalArgumentException("TYPE:INVALID_DOCUMENT|The uploaded document is not a Software Testing Document. Please upload a valid test plan, test case, or test strategy document.");
+        }
+
+        // 3. Handle Re-evaluation (Fixes "Duplicate Key" error)
         Optional<Evaluation> existingEval = evaluationRepository.findByDocumentId(documentId);
         if (existingEval.isPresent()) {
             evaluationRepository.delete(existingEval.get());
@@ -47,9 +56,6 @@ public class EvaluationService {
         documentRepository.save(doc);
 
         try {
-            // 3. Truncate content to prevent Rate Limits (Fixes 429 error)
-            String safeContent = truncateContent(doc.getContent());
-
             ChatClient chatClient = chatClientBuilder.build();
             
             // STRICT JSON INSTRUCTIONS
@@ -110,9 +116,64 @@ public class EvaluationService {
         }
     }
 
-    // Helper: Truncate large texts to avoid token limits
+    /**
+     * AI-based validation to check if the document is a Software Testing Document
+     */
+    private boolean isValidSoftwareTestingDocument(String content) {
+        try {
+            ChatClient chatClient = chatClientBuilder.build();
+            
+            String validationPrompt = """
+                You are a document classifier. Analyze the following document and determine if it is a Software Testing Document.
+                
+                A Software Testing Document includes:
+                - Test Plans
+                - Test Cases
+                - Test Scenarios
+                - Test Strategies
+                - Test Scripts
+                - QA Documentation
+                
+                It is NOT:
+                - Software Requirements Specification (SRS)
+                - Design Documents
+                - User Manuals
+                - Project Plans
+                - General documentation
+                
+                Respond with ONLY "YES" if it is a Software Testing Document, or "NO" if it is not.
+                Do not include any explanation or additional text.
+                """;
+
+            String aiResponse = chatClient.prompt()
+                    .system(validationPrompt)
+                    .user(u -> u.text("Document Content:\n{content}")
+                            .param("content", content))
+                    .call()
+                    .content();
+
+            return aiResponse != null && aiResponse.trim().equalsIgnoreCase("YES");
+            
+        } catch (Exception e) {
+            System.err.println("Document validation error: " + e.getMessage());
+            // If validation fails, allow the document to proceed (fail-open approach)
+            // You can change this to 'return false' for a fail-closed approach
+            return true;
+        }
+    }
+
+    /**
+     * Helper: Truncate large texts to avoid token limits
+     * Can be toggled on/off using ENABLE_TRUNCATION field
+     */
     private String truncateContent(String content) {
         if (content == null) return "";
+        
+        // If truncation is disabled, return full content
+        if (!ENABLE_TRUNCATION) {
+            return content;
+        }
+        
         // 15,000 chars is roughly 3,000-4,000 tokens (well within the 20k limit)
         int maxLength = 15000; 
         if (content.length() > maxLength) {
@@ -121,8 +182,6 @@ public class EvaluationService {
         return content;
     }
 
-    // ... Rest of the methods (getUserEvaluations, getEvaluationByDocumentId, mapToEntity, mapToDTO) remain the same ...
-    
     public List<EvaluationDTO> getUserEvaluations(UUID userId) {
         return evaluationRepository.findByUserId(userId).stream()
                 .map(eval -> mapToDTO(eval, eval.getDocument().getFilename()))
