@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import authService from "../services/authService";
-import "../css/Register.css";
+import "../css/TeacherRegister.css";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -36,12 +36,13 @@ export default function Register() {
         fullName,
         email,
         password,
+        userType: 'TEACHER',
       });
       
       console.log("Registration successful:", response);
       
-      // Redirect to login page after successful registration
-      navigate("/login", { 
+      // Redirect to teacher login page after successful registration
+      navigate("/login/teacher", { 
         state: { message: "Registration successful! Please log in." } 
       });
     } catch (err) {
@@ -127,9 +128,12 @@ export default function Register() {
           </div>
 
           <div className="welcome">
-            <h2>Create account</h2>
+            <h2>Teacher Registration</h2>
             <p>
-              Already have an account? <Link to="/login">Log in</Link>
+              Already have an account? <Link to="/login/teacher">Log in</Link>
+            </p>
+            <p className="role-switch">
+              Are you a student? <Link to="/register/student">Register here</Link>
             </p>
           </div>
 

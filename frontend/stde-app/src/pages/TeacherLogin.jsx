@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import authService from "../services/authService";
-import "../css/Login.css";
+import "../css/TeacherLogin.css";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -20,8 +20,8 @@ export default function Login() {
       const response = await authService.login({ email, password });
       console.log("Login successful:", response);
       
-      // Redirect to AI Evaluate page after successful login
-      navigate("/ai-evaluate");
+      // Redirect to Teacher Classroom page after successful login
+      navigate("/teacher/classroom");
     } catch (err) {
       console.error("Login error:", err);
       setError(err || "Invalid email or password. Please try again.");
@@ -105,9 +105,12 @@ export default function Login() {
           </div>
 
           <div className="welcome">
-            <h2>Welcome back</h2>
+            <h2>Teacher Login</h2>
             <p>
-              Don't have an account? <Link to="/register">Sign up</Link>
+              Don't have an account? <Link to="/register/teacher">Sign up</Link>
+            </p>
+            <p className="role-switch">
+              Are you a student? <Link to="/login/student">Login here</Link>
             </p>
           </div>
 
