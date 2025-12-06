@@ -11,6 +11,7 @@ import TestEvaluation from "./pages/TestEvaluation";
 import Classroom from "./pages/Classroom";
 import TeacherClassroom from "./pages/TeacherClassroom";
 import OAuthCallback from "./pages/OAuthCallback";
+import TeacherProfile from "./pages/TeacherProfile";
 
 // Components
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -22,7 +23,7 @@ export default function App() {
       <Route path="/" element={<Navigate to="/login/student" replace />} />
 
       <Route path="/auth/callback" element={<OAuthCallback />} />
-      
+
       {/* AUTH ROUTES */}
       <Route path="/login/student" element={<Login />} />
       <Route path="/register/student" element={<Register />} />
@@ -42,6 +43,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/profile"
         element={
@@ -50,6 +52,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      
       <Route
         path="/classroom"
         element={
@@ -65,6 +68,14 @@ export default function App() {
         element={
           <ProtectedRoute allowedRoles={["TEACHER"]}>
             <TeacherClassroom />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/teacher/profile"
+        element={
+          <ProtectedRoute allowedRoles={["TEACHER"]}>
+            <TeacherProfile />
           </ProtectedRoute>
         }
       />
