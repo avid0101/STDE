@@ -17,64 +17,73 @@ import ProtectedRoute from "./components/ProtectedRoute";
 export default function App() {
   return (
     <Routes>
-      {/* Public routes - Default redirect to student login */}
+
+      {/* Default redirect */}
       <Route path="/" element={<Navigate to="/login/student" />} />
-      
-      {/* Student Auth Routes */}
+
+      {/* STUDENT AUTH ROUTES */}
       <Route path="/login/student" element={<Login />} />
       <Route path="/register/student" element={<Register />} />
-      
-      {/* Teacher Auth Routes */}
+
+      {/* TEACHER AUTH ROUTES */}
       <Route path="/login/teacher" element={<TeacherLogin />} />
       <Route path="/register/teacher" element={<TeacherRegister />} />
-      
-      {/* Legacy routes - redirect to student routes */}
+
+      {/* Redirect old legacy paths */}
       <Route path="/login" element={<Navigate to="/login/student" />} />
       <Route path="/register" element={<Navigate to="/register/student" />} />
 
-      {/* Protected routes - Student */}
-      <Route 
-        path="/ai-evaluate" 
+
+      {/* ==============================
+          STUDENT PROTECTED ROUTES
+      =============================== */}
+      <Route
+        path="/ai-evaluate"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={["STUDENT"]}>
             <AIEvaluate />
           </ProtectedRoute>
-        } 
+        }
       />
 
-      <Route 
-        path="/profile" 
+      <Route
+        path="/profile"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={["STUDENT"]}>
             <Profile />
           </ProtectedRoute>
-        } 
+        }
       />
 
-      <Route 
-        path="/classroom" 
+      <Route
+        path="/classroom"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={["STUDENT"]}>
             <Classroom />
           </ProtectedRoute>
         }
       />
 
-      {/* Protected routes - Teacher */}
-      <Route 
-        path="/teacher/classroom" 
+
+      {/* ==============================
+          TEACHER PROTECTED ROUTES
+      =============================== */}
+      <Route
+        path="/teacher/classroom"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={["TEACHER"]}>
             <TeacherClassroom />
           </ProtectedRoute>
         }
       />
 
-      {/* Dev Test Page (not protected) */}
+
+      {/* Dev test page */}
       <Route path="/test-eval" element={<TestEvaluation />} />
 
-      {/* 404 */}
+      {/* 404 PAGE */}
       <Route path="*" element={<h1>404 Page Not Found</h1>} />
+
     </Routes>
   );
 }

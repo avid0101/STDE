@@ -1,15 +1,19 @@
-import { Navigate } from 'react-router-dom';
-import authService from '../services/authService';
+import { Navigate } from "react-router-dom";
+import authService from "../services/authService";
 
-const ProtectedRoute = ({ children }) => {
+const ProtectedRoute = ({ children, allowedRoles }) => {
   const isAuthenticated = authService.isAuthenticated();
-  
-  if (!isAuthenticated) {
-    // Redirect to login if not authenticated
-    return <Navigate to="/login" replace />;
+  const user = authService.getCurrentUser(); // user must include {role: "STUDENT" or "TEACHER"}
+
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login/student" replace />;
   }
 
-  // Render the protected component if authenticated
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    // If role does not match → redirect to login or dashboard
+    return <Navigate to="/login/student" replace />;
+  }
+
   return children;
 };
 
