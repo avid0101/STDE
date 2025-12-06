@@ -33,7 +33,7 @@ export default function Sidebar() {
   // Teacher navigation items
   const teacherNavItems = [
     {
-      path: "/classroom",
+      path: "/teacher/classroom",
       icon: (
         <svg width="20" height="20" fill="none" stroke="currentColor">
           <path d="M12 14l9-5-9-5-9 5 9 5z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
