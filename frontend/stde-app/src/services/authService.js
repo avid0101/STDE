@@ -5,11 +5,11 @@ const authService = {
   register: async (userData) => {
     try {
       const response = await api.post('/auth/register', {
-        firstname: userData.fullName.split(' ')[0],
-        lastname: userData.fullName.split(' ').slice(1).join(' ') || userData.fullName.split(' ')[0],
+        firstname: userData.firstName,
+        lastname: userData.familyName,
         email: userData.email,
         password: userData.password,
-        userType: userData.userType || 'STUDENT', // Use provided userType or default to STUDENT
+        userType: userData.userType || 'STUDENT',
       });
       return response.data;
     } catch (error) {

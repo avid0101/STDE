@@ -7,7 +7,8 @@ export default function Register() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [familyName, setFamilyName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -33,7 +34,8 @@ export default function Register() {
 
     try {
       const response = await authService.register({
-        fullName,
+        firstName,
+        familyName,
         email,
         password,
         userType: 'TEACHER',
@@ -152,13 +154,26 @@ export default function Register() {
             )}
 
             <div className="form-group">
-              <label htmlFor="fullName">Full Name</label>
+              <label htmlFor="firstName">First Name</label>
               <input
-                id="fullName"
+                id="firstName"
                 type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Enter your full name"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="Enter your first name"
+                required
+                disabled={loading}
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="familyName">Family Name</label>
+              <input
+                id="familyName"
+                type="text"
+                value={familyName}
+                onChange={(e) => setFamilyName(e.target.value)}
+                placeholder="Enter your family name"
                 required
                 disabled={loading}
               />
