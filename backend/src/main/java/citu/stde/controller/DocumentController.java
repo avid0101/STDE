@@ -2,6 +2,7 @@ package citu.stde.controller;
 
 import citu.stde.dto.DocumentDTO;
 import citu.stde.service.DocumentService;
+import citu.stde.service.ClassroomService; 
 import citu.stde.repository.UserRepository;
 import citu.stde.entity.Document;
 import lombok.RequiredArgsConstructor;
@@ -23,16 +24,16 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final UserRepository userRepository;
+    private final ClassroomService classroomService; 
 
     @PostMapping("/upload")
     public ResponseEntity<?> uploadDocument(
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "classId", required = false) UUID classId, // <--- Added optional parameter
+            @RequestParam(value = "classId", required = false) UUID classId,
             Authentication authentication) {
         try {
             UUID userId = extractUserIdFromAuth(authentication);
             
-            // Pass classId to the service (it might be null, which is fine)
             DocumentDTO document = documentService.uploadDocument(file, userId, classId);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
@@ -117,9 +118,7 @@ public class DocumentController {
     public ResponseEntity<?> uploadFromDrive(@RequestBody DriveUploadRequest request, Authentication authentication) {
         try {
             // 1. Get the current user
-            String email = authentication.getName();
-            UUID userId = userRepository.getIdByEmail(email)
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+            UUID userId = extractUserIdFromAuth(authentication);
 
             // 2. Call the service to perform the copy
             Document savedDoc = documentService.copyFromGoogleDrive(
@@ -134,6 +133,35 @@ public class DocumentController {
             e.printStackTrace();
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "Drive import failed: " + e.getMessage()));
+        }
+    }
+
+    //ENDPOINT WITH SECURITY CHECK
+    @GetMapping("/classroom/{classId}")
+    public ResponseEntity<?> getClassDocuments(
+            @PathVariable UUID classId,
+            Authentication authentication) {
+        try {
+            // 1. Get the current user's ID (Teacher/Professor)
+            UUID userId = extractUserIdFromAuth(authentication);
+
+            // 2. Horizontal Access Control: Verify the user owns this class
+            classroomService.verifyClassroomOwnership(classId, userId);
+
+            // 3. If check passes, fetch the data
+            List<DocumentDTO> documents = documentService.getDocumentsByClass(classId);
+
+            return ResponseEntity.ok(documents);
+
+        } catch (SecurityException e) {
+            // Return 403 Forbidden if user doesn't own the class
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "error", e.getMessage()
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "error", "Failed to fetch class documents: " + e.getMessage()
+            ));
         }
     }
 

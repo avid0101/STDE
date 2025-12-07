@@ -18,6 +18,10 @@ public class Document {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "classroom_id") // This creates a foreign key column
+    private Classroom classroom;
+
     @Column(nullable = false, length = 255)
     private String filename;
 

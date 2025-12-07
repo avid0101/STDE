@@ -10,6 +10,7 @@ import Profile from "./pages/Profile";
 import TestEvaluation from "./pages/TestEvaluation";
 import Classroom from "./pages/Classroom";
 import TeacherClassroom from "./pages/TeacherClassroom";
+import ClassroomDetails from './pages/ClassroomDetails';
 import OAuthCallback from "./pages/OAuthCallback";
 import TeacherProfile from "./pages/TeacherProfile";
 
@@ -52,7 +53,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      
+  
       <Route
         path="/classroom"
         element={
@@ -79,6 +80,10 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route 
+        path="/classroom/:id" 
+        element={
+        <ClassroomDetails />} />
 
       {/* Dev test page */}
       <Route path="/test-eval" element={<TestEvaluation />} />

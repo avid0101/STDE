@@ -37,7 +37,7 @@ const documentService = {
     return data;
   },
 
-  // 2. NEW: Import from Google Drive (Sends IDs only)
+  // 2. Import from Google Drive (Sends IDs only)
   uploadDriveFile: async (fileId, classId = null) => {
     const token = authService.getToken();
     
@@ -49,7 +49,7 @@ const documentService = {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json' // Important: We are sending JSON now
+        'Content-Type': 'application/json' 
       },
       body: JSON.stringify({ 
         fileId: fileId,
@@ -61,6 +61,31 @@ const documentService = {
 
     if (!response.ok) {
       throw new Error(data.error || 'Failed to import Drive document');
+    }
+
+    return data;
+  },
+
+  // 3. Get Documents for a Specific Classroom
+  getDocumentsByClass: async (classId) => {
+    const token = authService.getToken();
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    const response = await fetch(`${API_URL}/classroom/${classId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch class documents');
     }
 
     return data;
@@ -132,7 +157,12 @@ const documentService = {
       }
     });
 
-    const data = await response.json();
+    // Handle 204 No Content or simple 200 OK
+    if (response.status === 204) {
+      return { success: true };
+    }
+
+    const data = await response.json(); // Only parse if content exists
 
     if (!response.ok) {
       throw new Error(data.error || 'Failed to delete document');

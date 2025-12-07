@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.util.UUID;
+import java.security.Security;
 
 @Service
 @RequiredArgsConstructor
@@ -15,6 +16,13 @@ public class ClassroomService {
 
     private final ClassroomRepository classroomRepository;
     private final GoogleDriveService googleDriveService;
+
+    //Method to verify ownership before allowing access (Horizontal Access Control)
+    public void verifyClassroomOwnership(UUID classId, UUID teacherId) {
+        // Attempt to find the classroom matching BOTH the ID and the Teacher ID.
+        classroomRepository.findByIdAndTeacherId(classId, teacherId)
+            .orElseThrow(() -> new SecurityException("Unauthorized: User does not own this classroom or it does not exist."));
+    }
 
     @Transactional
     public Classroom createClassroom(String name, String section, String classCode, UUID teacherId) {

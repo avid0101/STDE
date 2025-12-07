@@ -5,8 +5,10 @@ import citu.stde.entity.Classroom;
 import citu.stde.entity.Document;
 import citu.stde.entity.DocumentStatus;
 import citu.stde.entity.User;
+import citu.stde.entity.Evaluation; 
 import citu.stde.repository.ClassroomRepository;
 import citu.stde.repository.DocumentRepository;
+import citu.stde.repository.EvaluationRepository; 
 import citu.stde.repository.UserRepository;
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential;
@@ -22,6 +24,7 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -29,6 +32,7 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,8 +43,7 @@ public class DocumentService {
     private final GoogleDriveService googleDriveService;
     private final ClassroomRepository classroomRepository;
     private final UserRepository userRepository;
-    
-    // ✅ CHANGED: Replaced 'Drive' with 'OAuth2AuthorizedClientService'
+    private final EvaluationRepository evaluationRepository; 
     private final OAuth2AuthorizedClientService clientService; 
 
     // Maximum file size: 10MB
@@ -52,20 +55,26 @@ public class DocumentService {
             "text/plain"
     );
 
-    public DocumentDTO uploadDocument(MultipartFile file, UUID userId, UUID classId) throws IOException {
-        // ... (Keep your validation & logic exactly the same as before) ...
-        // ... This part was already correct ...
-        
-        // Brief validation recap for context:
-        if (file.isEmpty()) throw new IllegalArgumentException("File is empty");
-        // ... rest of validation ...
+    // Get all documents for a specific class
+    @Transactional(readOnly = true)
+    public List<DocumentDTO> getDocumentsByClass(UUID classroomId) {
+        return documentRepository.findByClassroomIdOrderByUploadDateDesc(classroomId)
+                .stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
 
+    public DocumentDTO uploadDocument(MultipartFile file, UUID userId, UUID classId) throws IOException {
+        if (file.isEmpty()) throw new IllegalArgumentException("File is empty");
+        
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         String destinationFolderId = null;
+        Classroom classroom = null; // Hold reference to set relationship
+
         if (classId != null) {
-            Classroom classroom = classroomRepository.findById(classId)
+            classroom = classroomRepository.findById(classId)
                     .orElseThrow(() -> new IllegalArgumentException("Classroom not found"));
             destinationFolderId = classroom.getDriveFolderId(); 
         }
@@ -74,6 +83,7 @@ public class DocumentService {
 
         Document document = Document.builder()
                 .user(user)
+                .classroom(classroom) 
                 .filename(file.getOriginalFilename())
                 .fileType(file.getContentType())
                 .fileSize(file.getSize())
@@ -88,7 +98,6 @@ public class DocumentService {
         return convertToDTO(savedDocument);
     }
 
-    // ... (Keep getUserDocuments, getDocumentById, deleteDocument same as before) ...
     public List<DocumentDTO> getUserDocuments(UUID userId) {
         return documentRepository.findByUserIdOrderByUploadDateDesc(userId)
                 .stream().map(this::convertToDTO).collect(Collectors.toList());
@@ -116,33 +125,29 @@ public class DocumentService {
         documentRepository.delete(document);
     }
 
-    // ✅ FIXED: Build the Drive client dynamically here
     public Document copyFromGoogleDrive(String originalFileId, String classIdRaw, UUID userId) throws IOException {
-        
-        // 1. Build the Drive Client for the CURRENT USER
         Drive userDriveService = buildDriveClientForCurrentUser();
 
-        // 2. Determine Target Folder
         String targetFolderId = "root"; 
+        Classroom classroom = null;
+
         if (classIdRaw != null && !classIdRaw.isEmpty()) {
             try {
                 UUID classId = UUID.fromString(classIdRaw);
-                targetFolderId = classroomRepository.findById(classId)
-                    .map(Classroom::getDriveFolderId)
-                    .orElse("root");
+                classroom = classroomRepository.findById(classId).orElse(null);
+                if (classroom != null) {
+                    targetFolderId = classroom.getDriveFolderId();
+                }
             } catch (IllegalArgumentException e) { }
         }
 
-        // 3. Prepare Copy Metadata
         File copyMetadata = new File();
         copyMetadata.setParents(Collections.singletonList(targetFolderId));
 
-        // 4. Execute Drive API Copy (Using the USER'S credentials)
         File copiedFile = userDriveService.files().copy(originalFileId, copyMetadata)
                 .setFields("id, name, webViewLink, size, mimeType")
                 .execute();
 
-        // 5. Save to Database
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
@@ -155,24 +160,19 @@ public class DocumentService {
         doc.setDriveWebViewLink(copiedFile.getWebViewLink());
         doc.setUploadDate(Instant.now());
         doc.setUser(user);
+        doc.setClassroom(classroom); 
         doc.setStatus(DocumentStatus.UPLOADED);
         doc.setIsCloudFile(true); 
 
         return documentRepository.save(doc);
     }
 
-    // 🔒 Helper to get the logged-in user's Google Token
     private Drive buildDriveClientForCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null) {
-            throw new RuntimeException("No user logged in");
-        }
+        if (authentication == null) throw new RuntimeException("No user logged in");
 
-        // Load the authorized client (token) for "google"
         OAuth2AuthorizedClient client = clientService.loadAuthorizedClient("google", authentication.getName());
-        if (client == null) {
-            throw new RuntimeException("User has not authorized Google Drive access");
-        }
+        if (client == null) throw new RuntimeException("User has not authorized Google Drive access");
 
         String accessToken = client.getAccessToken().getTokenValue();
         GoogleCredential credential = new GoogleCredential().setAccessToken(accessToken);
@@ -190,6 +190,22 @@ public class DocumentService {
     }
 
     private DocumentDTO convertToDTO(Document document) {
+        
+        // 1. Get Student Name safely
+        String studentName = "Unknown";
+        if (document.getUser() != null) {
+            studentName = document.getUser().getFirstname() + " " + document.getUser().getLastname();
+        }
+
+        // 2. Get Score (if evaluated)
+        Integer score = null;
+        if (document.getStatus() == DocumentStatus.COMPLETED) {
+            Optional<Evaluation> eval = evaluationRepository.findByDocumentId(document.getId());
+            if (eval.isPresent()) {
+                score = eval.get().getOverallScore();
+            }
+        }
+
         return DocumentDTO.builder()
                 .id(document.getId())
                 .filename(document.getFilename())
@@ -197,6 +213,10 @@ public class DocumentService {
                 .fileSize(document.getFileSize())
                 .uploadDate(document.getUploadDate())
                 .status(document.getStatus())
+                .studentName(studentName) 
+                .overallScore(score)      
+                .driveFileId(document.getDriveFileId())
+                .classroomId(document.getClassroom() != null ? document.getClassroom().getId() : null)
                 .build();
     }
 }

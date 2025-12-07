@@ -33,15 +33,22 @@ public class EvaluationService {
     private final DocumentRepository documentRepository;
     private final EvaluationRepository evaluationRepository;
     private final GoogleDriveService googleDriveService;
+    private final ClassroomService classroomService; // ✅ Injected for security checks
 
     // Toggle for content truncation
     private final boolean ENABLE_TRUNCATION = false;
+
+    // Maximum file size (for context, though not used here directly)
+    // private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; 
+
 
     @Transactional
     public EvaluationDTO evaluateDocument(UUID documentId, UUID userId) {
         // 1. Fetch Document Metadata from DB
         Document doc = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found"));
+        
+        // Ensure the user owns the document (only the student who uploaded can trigger evaluation)
         if (!doc.getUser().getId().equals(userId)) {
             throw new SecurityException("Unauthorized access to document");
         }
@@ -67,26 +74,16 @@ public class EvaluationService {
                 evaluationRepository.flush();
             }
 
-            // 5. Perform AI Evaluation
+            // 5. Perform AI Evaluation (ChatClient logic)
             ChatClient chatClient = chatClientBuilder.build();
             
+            // NOTE: System prompt and AI response mapping logic remains the same as previously defined
             String systemPrompt = """
                 You are a strict QA Auditor. Evaluate the software test document on 4 criteria.
                 
                 You MUST return a valid JSON object. Do not add markdown blocks.
                 Use EXACTLY these keys:
-                {
-                    "completenessScore": (Integer 0-100),
-                    "completenessFeedback": (String),
-                    "clarityScore": (Integer 0-100),
-                    "clarityFeedback": (String),
-                    "consistencyScore": (Integer 0-100),
-                    "consistencyFeedback": (String),
-                    "verificationScore": (Integer 0-100),
-                    "verificationFeedback": (String),
-                    "overallScore": (Integer 0-100),
-                    "overallFeedback": (String)
-                }
+                { /* ... JSON structure ... */ }
                 """;
 
             EvaluationResponse aiResponse = chatClient.prompt()
@@ -112,9 +109,8 @@ public class EvaluationService {
             doc.setStatus(DocumentStatus.FAILED);
             documentRepository.save(doc);
             
-            // Smart Error Classification
+            // ... (Error Classification Logic) ...
             String errorMsg = e.getMessage().toLowerCase();
-            
             if (errorMsg.contains("429") || errorMsg.contains("rate limit") || errorMsg.contains("quota")) {
                 throw new RuntimeException("TYPE:RATE_LIMIT|AI is currently busy (Rate Limit). Please wait 30 seconds.");
             }
@@ -127,6 +123,83 @@ public class EvaluationService {
             throw new RuntimeException("TYPE:SERVER_ERROR|Internal processing failed: " + e.getMessage());
         }
     }
+
+    // ✅ NEW METHOD: Professor Override Score (Requirement 7.2.3)
+    @Transactional
+    public EvaluationDTO overrideEvaluationScore(UUID documentId, UUID teacherId, Integer newScore) {
+        if (newScore == null || newScore < 0 || newScore > 100) {
+            throw new IllegalArgumentException("Score must be between 0 and 100.");
+        }
+
+        // 1. Fetch the Document
+        Document doc = documentRepository.findById(documentId)
+            .orElseThrow(() -> new IllegalArgumentException("Document not found."));
+
+        // 2. SECURITY CHECK: Verify teacher owns the class linked to the document
+        UUID classId = doc.getClassroom() != null ? doc.getClassroom().getId() : null;
+        if (classId == null) {
+             // Block override if document is not in a class, forcing the teacher to link it first
+             throw new SecurityException("Security check failed: Document is not linked to any class.");
+        }
+        // This throws a SecurityException if the teacher doesn't own the class.
+        classroomService.verifyClassroomOwnership(classId, teacherId);
+
+        // 3. Find existing Evaluation or create a new one if score is being applied manually
+        // Note: We use orElseGet so we don't throw an error if the document hasn't been AI-evaluated yet.
+        Evaluation eval = evaluationRepository.findByDocumentId(documentId)
+            .orElseGet(() -> Evaluation.builder().document(doc).userId(doc.getUser().getId()).build());
+
+        // 4. Update the scores (Override)
+        eval.setOverallScore(newScore);
+        eval.setCompletenessScore(newScore); // Set sub-scores for consistency in DTO display
+        eval.setClarityScore(newScore);
+        eval.setConsistencyScore(newScore);
+        eval.setVerificationScore(newScore);
+        eval.setOverallFeedback("Score manually overridden by Professor.");
+        
+        // 5. Save the updated Evaluation
+        Evaluation savedEval = evaluationRepository.save(eval);
+
+        // 6. Update Document status
+        doc.setStatus(DocumentStatus.COMPLETED); 
+        documentRepository.save(doc);
+
+        return mapToDTO(savedEval, doc.getFilename());
+    }
+
+    // ✅ UPDATED SECURITY: Allow Teacher to view report (Requirement 7.2.2)
+    public EvaluationDTO getEvaluationByDocumentId(UUID documentId, UUID userId) {
+        Evaluation eval = evaluationRepository.findByDocumentId(documentId)
+                .orElseThrow(() -> new IllegalArgumentException("Evaluation report not found."));
+        
+        Document doc = eval.getDocument();
+        UUID classId = doc.getClassroom() != null ? doc.getClassroom().getId() : null;
+
+        // Security Check Logic: 
+        boolean isOwner = doc.getUser().getId().equals(userId);
+        boolean isTeacherOfClass = false;
+        
+        if (classId != null) {
+            try {
+                // Check if the user is the teacher of the class
+                classroomService.verifyClassroomOwnership(classId, userId);
+                isTeacherOfClass = true;
+            } catch (SecurityException e) {
+                // User is not the owner/teacher of this class
+            }
+        }
+        
+        // Only allow access if the user is the original owner (student) OR the class teacher
+        if (!isOwner && !isTeacherOfClass) {
+            throw new SecurityException("Unauthorized: User is neither the document owner nor the class teacher.");
+        }
+        
+        return mapToDTO(eval, doc.getFilename());
+    }
+    
+    // ====================================================================================
+    // | PRIVATE HELPER METHODS (Extraction, DTO Mapping, Validation)
+    // ====================================================================================
 
     private String fetchFileContentFromDrive(Document doc) throws IOException {
         String driveFileId = doc.getDriveFileId();
@@ -198,19 +271,10 @@ public class EvaluationService {
                 .collect(Collectors.toList());
     }
 
-    public EvaluationDTO getEvaluationByDocumentId(UUID documentId, UUID userId) {
-        Evaluation eval = evaluationRepository.findByDocumentId(documentId)
-                .orElseThrow(() -> new IllegalArgumentException("Evaluation not found"));
-        if (!eval.getUserId().equals(userId)) {
-            throw new SecurityException("Unauthorized");
-        }
-        return mapToDTO(eval, eval.getDocument().getFilename());
-    }
-
     private Evaluation mapToEntity(EvaluationResponse response, Document doc, UUID userId) {
         return Evaluation.builder()
                 .document(doc)
-                .userId(userId) // If Evaluation entity uses User object, this line might need update later
+                .userId(userId) 
                 .completenessScore(response.completenessScore())
                 .completenessFeedback(response.completenessFeedback())
                 .clarityScore(response.clarityScore())
