@@ -4,6 +4,7 @@ import citu.stde.entity.Document;
 import citu.stde.entity.DocumentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.UUID;
@@ -34,4 +35,10 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     // For Teachers -> Only show submitted work
     List<Document> findByClassroomIdAndIsSubmittedTrueOrderByUploadDateDesc(UUID classroomId);
+
+    // Count all submitted documents across all classrooms owned by this teacher
+    long countByClassroom_TeacherIdAndIsSubmittedTrue(UUID teacherId);
+
+    // Get recent submissions for teacher (Pageable allows us to set the limit to 10 or whatever)
+    List<Document> findByClassroom_TeacherIdAndIsSubmittedTrueOrderByUploadDateDesc(UUID teacherId, Pageable pageable);
 }

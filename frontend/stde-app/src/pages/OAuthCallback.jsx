@@ -28,9 +28,9 @@ export default function OAuthCallback() {
 
       // Redirect based on role
       if (userType === 'STUDENT') {
-        navigate('/ai-evaluate');
+        navigate('/student/dashboard');
       } else if (userType === 'TEACHER') {
-        navigate('/teacher/classroom');
+        navigate('/teacher/dashboard');
       }
     } else {
       navigate('/login/student');

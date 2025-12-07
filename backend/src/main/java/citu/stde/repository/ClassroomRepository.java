@@ -20,4 +20,7 @@ public interface ClassroomRepository extends JpaRepository<Classroom, UUID> {
 
     // Find all classes a student is enrolled in
     List<Classroom> findByStudents_Id(UUID studentId);
+
+    // Count classes for dashboard
+    long countByTeacherId(UUID teacherId);
 }

@@ -28,7 +28,16 @@ export default function Sidebar() {
 
   const teacherNavItems = [
     {
-      path: "/teacher/classroom",
+      path: "/teacher/dashboard",
+      icon: (
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+      label: "Dashboard"
+    },
+    {
+      path: "/teacher/classrooms",
       icon: (
         <svg width="20" height="20" fill="none" stroke="currentColor">
           <path d="M12 14l9-5-9-5-9 5 9 5z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -36,7 +45,7 @@ export default function Sidebar() {
           <path d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ),
-      label: "Classroom"
+      label: "Classrooms"
     },
     {
     path: "/teacher/profile",
@@ -61,17 +70,17 @@ export default function Sidebar() {
       label: "Dashboard"
     },
     {
-      path: "/classroom",
+      path: "/student/classrooms",
       icon: (
         <svg width="20" height="20" fill="none" stroke="currentColor">
           <circle cx="12" cy="7" r="4" strokeWidth="2" />
           <path d="M5 21a7 7 0 0114 0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ),
-      label: "Classroom"
+      label: "Classrooms"
     },
     {
-      path: "/profile",
+      path: "/student/profile",
       icon: (
         <svg width="20" height="20" fill="none" stroke="currentColor">
           <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"

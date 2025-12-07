@@ -5,8 +5,10 @@ import citu.stde.dto.EvaluationResponse;
 import citu.stde.entity.Document;
 import citu.stde.entity.DocumentStatus;
 import citu.stde.entity.Evaluation;
+import citu.stde.entity.User;
 import citu.stde.repository.DocumentRepository;
 import citu.stde.repository.EvaluationRepository;
+import citu.stde.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -21,8 +23,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -36,12 +41,17 @@ public class EvaluationService {
     private final EvaluationRepository evaluationRepository;
     private final GoogleDriveService googleDriveService;
     private final ClassroomService classroomService; 
+    private final UserRepository userRepository;
 
-    private final boolean ENABLE_TRUNCATION = false;
+    // ==========================================
+    // DEV SETTINGS (Toggle here for testing)
+    // ==========================================
+    private final boolean ENABLE_TRUNCATION = false; // Set 'true' to save tokens
+    private static final int HOURLY_LIMIT = 30;      // Dev limit increased to 30
+    // ==========================================
 
     @Transactional
     public EvaluationDTO evaluateDocument(UUID documentId, UUID userId) {
-        // 1. Fetch Document Metadata
         Document doc = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found"));
         
@@ -49,43 +59,37 @@ public class EvaluationService {
             throw new SecurityException("Unauthorized access to document");
         }
 
+        checkAndIncrementUsage(userId);
+
         doc.setStatus(DocumentStatus.PROCESSING);
         documentRepository.save(doc);
 
         try {
-            // 2. Fetch File Content from Google Drive
             String fileContent = fetchFileContentFromDrive(doc);
-
-            // Calculate Hash & Check for Duplicates (Strategy 1)
             String currentHash = calculateHash(fileContent);
             doc.setContentHash(currentHash);
-            documentRepository.save(doc); // Save hash immediately
+            documentRepository.save(doc);
 
-            // Check if this user has already analyzed this exact content
             Optional<Evaluation> cachedEval = evaluationRepository
                 .findTopByUserIdAndDocument_ContentHashOrderByCreatedAtDesc(userId, currentHash);
 
             if (cachedEval.isPresent()) {
-                System.out.println("Duplicate content detected. Returning cached result for doc ID: " + documentId);
+                System.out.println("Duplicate content detected. Returning cached result.");
                 return copyCachedEvaluation(cachedEval.get(), doc, userId);
             }
 
-            // 3. Validate Document Type
             String safeContent = truncateContent(fileContent);
             if (!isValidSoftwareTestingDocument(safeContent)) {
                 throw new IllegalArgumentException("TYPE:INVALID_DOCUMENT|The uploaded document is not a Software Testing Document.");
             }
 
-            // 4. Handle Re-evaluation (Cleanup old eval for THIS document ID)
             Optional<Evaluation> existingEval = evaluationRepository.findByDocumentId(documentId);
             if (existingEval.isPresent()) {
                 evaluationRepository.delete(existingEval.get());
                 evaluationRepository.flush();
             }
 
-            // 5. Perform AI Evaluation
             ChatClient chatClient = chatClientBuilder.build();
-            
             String systemPrompt = """
                 You are a strict QA Auditor. Evaluate the software test document on 4 criteria.
                 You MUST return a valid JSON object. Do not add markdown blocks.
@@ -131,7 +135,6 @@ public class EvaluationService {
             if (errorMsg.contains("429") || errorMsg.contains("rate limit")) {
                 throw new RuntimeException("TYPE:RATE_LIMIT|AI is busy. Please wait 30 seconds.");
             }
-            // Propagate custom exceptions (like INVALID_DOCUMENT) directly
             if (e.getMessage().startsWith("TYPE:")) {
                 throw new RuntimeException(e.getMessage());
             }
@@ -142,19 +145,71 @@ public class EvaluationService {
         }
     }
 
-    // Helper to calculate SHA-256 Hash
+    private void checkAndIncrementUsage(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        Instant now = Instant.now();
+        Instant windowStart = user.getEvaluationWindowStart();
+
+        // Null Safety: Treat null count as 0
+        int currentCount = user.getEvaluationCount() == null ? 0 : user.getEvaluationCount();
+
+        if (windowStart == null || windowStart.plus(1, ChronoUnit.HOURS).isBefore(now)) {
+            user.setEvaluationWindowStart(now);
+            user.setEvaluationCount(0);
+            windowStart = now;
+            currentCount = 0;
+        }
+
+        if (currentCount >= HOURLY_LIMIT) {
+            long minutesLeft = ChronoUnit.MINUTES.between(now, windowStart.plus(1, ChronoUnit.HOURS));
+            throw new RuntimeException("TYPE:QUOTA_EXCEEDED|You have used all " + HOURLY_LIMIT + " analysis attempts for this hour. Resets in " + minutesLeft + " minutes.");
+        }
+
+        user.setEvaluationCount(currentCount + 1);
+        userRepository.save(user);
+    }
+
+    public Map<String, Object> getUsageStats(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        Instant now = Instant.now();
+        Instant windowStart = user.getEvaluationWindowStart();
+        
+        int currentCount = user.getEvaluationCount() == null ? 0 : user.getEvaluationCount();
+
+        if (windowStart == null || windowStart.plus(1, ChronoUnit.HOURS).isBefore(now)) {
+            currentCount = 0;
+            windowStart = now; 
+        }
+
+        long secondsRemaining = 0;
+        if (windowStart != null) {
+            Instant resetTime = windowStart.plus(1, ChronoUnit.HOURS);
+            secondsRemaining = Math.max(0, ChronoUnit.SECONDS.between(now, resetTime));
+        }
+
+        // Returns the HOURLY_LIMIT constant, so frontend updates automatically
+        return Map.of(
+            "used", currentCount,
+            "limit", HOURLY_LIMIT, 
+            "remaining", Math.max(0, HOURLY_LIMIT - currentCount),
+            "resetInSeconds", secondsRemaining
+        );
+    }
+
     private String calculateHash(String content) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(content.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash);
         } catch (Exception e) {
-            System.err.println("Hash calculation failed: " + e.getMessage());
-            return null; // Fail open (allow processing) if hash fails
+            return null;
         }
     }
 
-    // Create a new Evaluation entry from a Cached one (Cost: 0 Tokens)
     private EvaluationDTO copyCachedEvaluation(Evaluation cached, Document currentDoc, UUID userId) {
         Evaluation newEval = Evaluation.builder()
                 .document(currentDoc)
@@ -172,179 +227,86 @@ public class EvaluationService {
                 .build();
 
         Evaluation saved = evaluationRepository.save(newEval);
-        
         currentDoc.setStatus(DocumentStatus.COMPLETED);
         documentRepository.save(currentDoc);
-
         return mapToDTO(saved, currentDoc.getFilename());
     }
 
     @Transactional
     public EvaluationDTO overrideEvaluationScore(UUID documentId, UUID teacherId, Integer newScore) {
-        if (newScore == null || newScore < 0 || newScore > 100) {
-            throw new IllegalArgumentException("Score must be between 0 and 100.");
-        }
-
-        Document doc = documentRepository.findById(documentId)
-            .orElseThrow(() -> new IllegalArgumentException("Document not found."));
-
+        if (newScore == null || newScore < 0 || newScore > 100) throw new IllegalArgumentException("Score must be between 0 and 100.");
+        Document doc = documentRepository.findById(documentId).orElseThrow(() -> new IllegalArgumentException("Document not found."));
         UUID classId = doc.getClassroom() != null ? doc.getClassroom().getId() : null;
-        if (classId == null) {
-             throw new SecurityException("Security check failed: Document is not linked to any class.");
-        }
+        if (classId == null) throw new SecurityException("Security check failed: Document is not linked to any class.");
         classroomService.verifyClassroomOwnership(classId, teacherId);
-
-        Evaluation eval = evaluationRepository.findByDocumentId(documentId)
-            .orElseGet(() -> Evaluation.builder().document(doc).userId(doc.getUser().getId()).build());
-
+        Evaluation eval = evaluationRepository.findByDocumentId(documentId).orElseGet(() -> Evaluation.builder().document(doc).userId(doc.getUser().getId()).build());
         eval.setOverallScore(newScore);
         eval.setCompletenessScore(newScore);
         eval.setClarityScore(newScore);
         eval.setConsistencyScore(newScore);
         eval.setVerificationScore(newScore);
         eval.setOverallFeedback("Score manually overridden by Professor.");
-        
         Evaluation savedEval = evaluationRepository.save(eval);
-
         doc.setStatus(DocumentStatus.COMPLETED); 
         documentRepository.save(doc);
-
         return mapToDTO(savedEval, doc.getFilename());
     }
 
     public EvaluationDTO getEvaluationByDocumentId(UUID documentId, UUID userId) {
-        Evaluation eval = evaluationRepository.findByDocumentId(documentId)
-                .orElseThrow(() -> new IllegalArgumentException("Evaluation report not found."));
-        
+        Evaluation eval = evaluationRepository.findByDocumentId(documentId).orElseThrow(() -> new IllegalArgumentException("Evaluation report not found."));
         Document doc = eval.getDocument();
         UUID classId = doc.getClassroom() != null ? doc.getClassroom().getId() : null;
-
         boolean isOwner = doc.getUser().getId().equals(userId);
         boolean isTeacherOfClass = false;
-        
         if (classId != null) {
-            try {
-                classroomService.verifyClassroomOwnership(classId, userId);
-                isTeacherOfClass = true;
-            } catch (SecurityException e) {
-                // Not the teacher
-            }
+            try { classroomService.verifyClassroomOwnership(classId, userId); isTeacherOfClass = true; } catch (SecurityException e) { }
         }
-        
-        if (!isOwner && !isTeacherOfClass) {
-            throw new SecurityException("Unauthorized: User is neither the document owner nor the class teacher.");
-        }
-        
+        if (!isOwner && !isTeacherOfClass) throw new SecurityException("Unauthorized");
         return mapToDTO(eval, doc.getFilename());
     }
     
-    // ====================================================================================
-    // | PRIVATE HELPER METHODS
-    // ====================================================================================
-
     private String fetchFileContentFromDrive(Document doc) throws IOException {
         String driveFileId = doc.getDriveFileId();
-        if (driveFileId == null || driveFileId.isEmpty()) {
-            throw new IllegalArgumentException("Document is missing Google Drive File ID");
-        }
-
+        if (driveFileId == null || driveFileId.isEmpty()) throw new IllegalArgumentException("Document is missing Google Drive File ID");
         try (InputStream inputStream = googleDriveService.downloadFile(driveFileId)) {
             String contentType = doc.getFileType();
-            
-            if ("application/pdf".equals(contentType)) {
-                return extractTextFromPDF(inputStream);
-            } else if ("application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(contentType)) {
-                return extractTextFromDOCX(inputStream);
-            } else if ("text/plain".equals(contentType)) {
-                return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
-            } else {
-                throw new IllegalArgumentException("Unsupported file type: " + contentType);
-            }
+            if ("application/pdf".equals(contentType)) return extractTextFromPDF(inputStream);
+            else if ("application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(contentType)) return extractTextFromDOCX(inputStream);
+            else return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 
     private String extractTextFromPDF(InputStream inputStream) throws IOException {
-        try (PDDocument document = PDDocument.load(inputStream)) {
-            PDFTextStripper stripper = new PDFTextStripper();
-            return stripper.getText(document);
-        }
+        try (PDDocument document = PDDocument.load(inputStream)) { return new PDFTextStripper().getText(document); }
     }
 
     private String extractTextFromDOCX(InputStream inputStream) throws IOException {
-        try (XWPFDocument document = new XWPFDocument(inputStream);
-             XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
-            return extractor.getText();
-        }
+        try (XWPFDocument document = new XWPFDocument(inputStream)) { return new XWPFWordExtractor(document).getText(); }
     }
 
     private boolean isValidSoftwareTestingDocument(String content) {
         try {
             ChatClient chatClient = chatClientBuilder.build();
-            String validationPrompt = """
-                You are a document classifier. Analyze the following document and determine if it is a Software Testing Document.
-                Respond with ONLY "YES" if it is a Software Testing Document, or "NO" if it is not.
-                """;
-            String aiResponse = chatClient.prompt()
-                    .system(validationPrompt)
-                    .user(u -> u.text("Document Content:\n{content}").param("content", content))
-                    .call()
-                    .content();
+            String validationPrompt = "Respond with ONLY \"YES\" if it is a Software Testing Document, or \"NO\".";
+            String aiResponse = chatClient.prompt().system(validationPrompt).user(u -> u.text(content)).call().content();
             return aiResponse != null && aiResponse.trim().equalsIgnoreCase("YES");
-        } catch (Exception e) {
-            System.err.println("Document validation error: " + e.getMessage());
-            return true;
-        }
+        } catch (Exception e) { return true; }
     }
 
     private String truncateContent(String content) {
-        if (content == null) return "";
-        if (!ENABLE_TRUNCATION) return content;
-        int maxLength = 15000; 
-        if (content.length() > maxLength) {
-            return content.substring(0, maxLength) + "\n... [CONTENT TRUNCATED FOR AI ANALYSIS] ...";
-        }
-        return content;
+        if (!ENABLE_TRUNCATION || content == null) return content;
+        return content.length() > 15000 ? content.substring(0, 15000) : content;
     }
 
     public List<EvaluationDTO> getUserEvaluations(UUID userId) {
-        return evaluationRepository.findByUserId(userId).stream()
-                .map(eval -> mapToDTO(eval, eval.getDocument().getFilename()))
-                .collect(Collectors.toList());
+        return evaluationRepository.findByUserId(userId).stream().map(eval -> mapToDTO(eval, eval.getDocument().getFilename())).collect(Collectors.toList());
     }
 
     private Evaluation mapToEntity(EvaluationResponse response, Document doc, UUID userId) {
-        return Evaluation.builder()
-                .document(doc)
-                .userId(userId) 
-                .completenessScore(response.completenessScore())
-                .completenessFeedback(response.completenessFeedback())
-                .clarityScore(response.clarityScore())
-                .clarityFeedback(response.clarityFeedback())
-                .consistencyScore(response.consistencyScore())
-                .consistencyFeedback(response.consistencyFeedback())
-                .verificationScore(response.verificationScore())
-                .verificationFeedback(response.verificationFeedback())
-                .overallScore(response.overallScore())
-                .overallFeedback(response.overallFeedback())
-                .build();
+        return Evaluation.builder().document(doc).userId(userId).completenessScore(response.completenessScore()).completenessFeedback(response.completenessFeedback()).clarityScore(response.clarityScore()).clarityFeedback(response.clarityFeedback()).consistencyScore(response.consistencyScore()).consistencyFeedback(response.consistencyFeedback()).verificationScore(response.verificationScore()).verificationFeedback(response.verificationFeedback()).overallScore(response.overallScore()).overallFeedback(response.overallFeedback()).build();
     }
 
     private EvaluationDTO mapToDTO(Evaluation eval, String filename) {
-        return EvaluationDTO.builder()
-                .id(eval.getId())
-                .documentId(eval.getDocument().getId())
-                .filename(filename)
-                .completenessScore(eval.getCompletenessScore())
-                .completenessFeedback(eval.getCompletenessFeedback())
-                .clarityScore(eval.getClarityScore())
-                .clarityFeedback(eval.getClarityFeedback())
-                .consistencyScore(eval.getConsistencyScore())
-                .consistencyFeedback(eval.getConsistencyFeedback())
-                .verificationScore(eval.getVerificationScore())
-                .verificationFeedback(eval.getVerificationFeedback())
-                .overallScore(eval.getOverallScore())
-                .overallFeedback(eval.getOverallFeedback())
-                .createdAt(eval.getCreatedAt())
-                .build();
+        return EvaluationDTO.builder().id(eval.getId()).documentId(eval.getDocument().getId()).filename(filename).completenessScore(eval.getCompletenessScore()).completenessFeedback(eval.getCompletenessFeedback()).clarityScore(eval.getClarityScore()).clarityFeedback(eval.getClarityFeedback()).consistencyScore(eval.getConsistencyScore()).consistencyFeedback(eval.getConsistencyFeedback()).verificationScore(eval.getVerificationScore()).verificationFeedback(eval.getVerificationFeedback()).overallScore(eval.getOverallScore()).overallFeedback(eval.getOverallFeedback()).createdAt(eval.getCreatedAt()).build();
     }
 }

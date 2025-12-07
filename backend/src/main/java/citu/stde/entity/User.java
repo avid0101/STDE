@@ -35,6 +35,13 @@ public class User {
     @Column(name = "is_active")
     private Boolean isActive = true;
 
+    @Column(name = "eval_count")
+    @Builder.Default
+    private Integer evaluationCount = 0;
+
+    @Column(name = "eval_window_start")
+    private Instant evaluationWindowStart;
+
     @Column(name = "created_at")
     private Instant createdAt = Instant.now();
 
@@ -43,4 +50,10 @@ public class User {
 
     @Column(name = "password_updated_at")
     private Instant passwordUpdatedAt;
+    
+    @PrePersist
+    protected void onCreate() {
+        if (createdAt == null) createdAt = Instant.now();
+        if (evaluationCount == null) evaluationCount = 0;
+    }
 }

@@ -86,7 +86,7 @@ export default function StudentDashboard() {
           <p style={{color: '#6b7280', marginBottom: '1.5rem'}}>Go to your classroom to upload and analyze new documents.</p>
           <button 
             className="select-file-btn" 
-            onClick={() => navigate('/classroom')}
+            onClick={() => navigate('/student/classrooms')}
             style={{display: 'inline-block'}}
           >
             Go to Classrooms

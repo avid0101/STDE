@@ -35,7 +35,7 @@ export default function Login() {
         localStorage.setItem("token", response.token);
       }
 
-      navigate("/ai-evaluate");
+      navigate("/student/dashboard");
     } catch (err) {
       setError("Invalid email or password. Please try again.");
     } finally {

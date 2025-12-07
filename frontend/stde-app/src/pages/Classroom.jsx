@@ -64,7 +64,7 @@ export default function Classroom() {
     return colors[Math.abs(hash) % colors.length];
   };
 
-  // ✅ NEW: Navigate to class details
+  // Navigate to class details
   const handleClassClick = (classId) => {
     navigate(`/classroom/${classId}`);
   };
@@ -102,7 +102,7 @@ export default function Classroom() {
               <div 
                 key={cls.id} 
                 className="class-card" 
-                onClick={() => handleClassClick(cls.id)} // ✅ Clickable
+                onClick={() => handleClassClick(cls.id)}
                 style={{ cursor: 'pointer' }}
               >
                 <div

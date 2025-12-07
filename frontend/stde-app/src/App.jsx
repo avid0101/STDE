@@ -5,57 +5,51 @@ import Register from "./pages/Register";
 import Login from "./pages/Login";
 import TeacherLogin from "./pages/TeacherLogin";
 import TeacherRegister from "./pages/TeacherRegister";
-import StudentDashboard from "./pages/StudentDashboard"; 
+import StudentDashboard from "./pages/StudentDashboard";
+import TeacherDashboard from "./pages/TeacherDashboard";
 import Profile from "./pages/Profile";
-import TestEvaluation from "./pages/TestEvaluation";
 import Classroom from "./pages/Classroom";
 import TeacherClassroom from "./pages/TeacherClassroom";
 import ClassroomDetails from './pages/ClassroomDetails';
 import OAuthCallback from "./pages/OAuthCallback";
 import TeacherProfile from "./pages/TeacherProfile";
-
-// Components
 import ProtectedRoute from "./components/ProtectedRoute";
 
 export default function App() {
   return (
     <Routes>
-      {/* Redirect base URL */}
       <Route path="/" element={<Navigate to="/login/student" replace />} />
-
       <Route path="/auth/callback" element={<OAuthCallback />} />
 
-      {/* AUTH ROUTES */}
+      {/* AUTH */}
       <Route path="/login/student" element={<Login />} />
       <Route path="/register/student" element={<Register />} />
       <Route path="/login/teacher" element={<TeacherLogin />} />
       <Route path="/register/teacher" element={<TeacherRegister />} />
-
-      {/* Legacy auth redirect */}
+      
+      {/* Legacy */}
       <Route path="/login" element={<Navigate to="/login/student" replace />} />
       <Route path="/register" element={<Navigate to="/register/student" replace />} />
 
-      {/* STUDENT PROTECTED ROUTES */}
+      {/* STUDENT */}
       <Route
-        path="/student/dashboard" 
+        path="/student/dashboard"
         element={
           <ProtectedRoute allowedRoles={["STUDENT"]}>
             <StudentDashboard />
           </ProtectedRoute>
         }
       />
-
       <Route
-        path="/profile"
+        path="/student/profile"
         element={
           <ProtectedRoute allowedRoles={["STUDENT"]}>
             <Profile />
           </ProtectedRoute>
         }
       />
-  
       <Route
-        path="/classroom"
+        path="/student/classrooms"
         element={
           <ProtectedRoute allowedRoles={["STUDENT"]}>
             <Classroom />
@@ -63,16 +57,24 @@ export default function App() {
         }
       />
       
-      {/* Shared Classroom Details (Both Student & Teacher) */}
+      {/* SHARED */}
       <Route 
         path="/classroom/:id" 
         element={
         <ClassroomDetails />} 
       />
 
-      {/* TEACHER PROTECTED ROUTES */}
+      {/* TEACHER */}
       <Route
-        path="/teacher/classroom"
+        path="/teacher/dashboard" 
+        element={
+          <ProtectedRoute allowedRoles={["TEACHER"]}>
+            <TeacherDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/teacher/classrooms"
         element={
           <ProtectedRoute allowedRoles={["TEACHER"]}>
             <TeacherClassroom />
@@ -87,14 +89,6 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-
-      {/* Legacy Redirects */}
-      <Route path="/ai-evaluate" element={<Navigate to="/student/dashboard" replace />} />
-
-      {/* Dev test page */}
-      <Route path="/test-eval" element={<TestEvaluation />} />
-
-      {/* 404 */}
       <Route path="*" element={<h1>404 Page Not Found</h1>} />
     </Routes>
   );

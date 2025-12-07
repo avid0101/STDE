@@ -22,20 +22,33 @@ public class EvaluationController {
     private final UserRepository userRepository;
 
     @PostMapping("/evaluate/{documentId}")
-    public ResponseEntity<EvaluationDTO> evaluateDocument(
+    public ResponseEntity<?> evaluateDocument(
             @PathVariable UUID documentId,
             Authentication authentication) {
-        
+        try {
+            UUID userId = getUserId(authentication);
+            return ResponseEntity.ok(evaluationService.evaluateDocument(documentId, userId));
+        } catch (RuntimeException e) {
+            // Check for our custom Quota error
+            if (e.getMessage().contains("TYPE:QUOTA_EXCEEDED")) {
+                String cleanMessage = e.getMessage().replace("TYPE:QUOTA_EXCEEDED|", "");
+                return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of("error", cleanMessage));
+            }
+            throw e;
+        }
+    }
+
+    // Get Usage Stats
+    @GetMapping("/usage")
+    public ResponseEntity<?> getUsageStats(Authentication authentication) {
         UUID userId = getUserId(authentication);
-        return ResponseEntity.ok(evaluationService.evaluateDocument(documentId, userId));
+        return ResponseEntity.ok(evaluationService.getUsageStats(userId));
     }
 
     @GetMapping("/document/{documentId}")
     public ResponseEntity<EvaluationDTO> getEvaluation(
             @PathVariable UUID documentId,
             Authentication authentication) {
-            
-        // Note: The service layer handles security (checking if user owns document/class)
         UUID userId = getUserId(authentication);
         return ResponseEntity.ok(evaluationService.getEvaluationByDocumentId(documentId, userId));
     }
@@ -46,42 +59,25 @@ public class EvaluationController {
         return ResponseEntity.ok(evaluationService.getUserEvaluations(userId));
     }
 
-    //Endpoint for Professor to Override Score (Requirement 7.2.3)
     @PutMapping("/override/{documentId}")
     public ResponseEntity<?> overrideEvaluation(
             @PathVariable UUID documentId,
-            @RequestBody OverrideRequest request, // Use the dedicated record/class
+            @RequestBody OverrideRequest request, 
             Authentication authentication) {
         try {
-            // 1. Get the current Professor's ID
             UUID teacherId = getUserId(authentication);
-            
-            // 2. Call the service to update the score and perform security check
             EvaluationDTO updatedEval = evaluationService.overrideEvaluationScore(
-                documentId, 
-                teacherId, 
-                request.overallScore()
+                documentId, teacherId, request.overallScore()
             );
-
-            return ResponseEntity.ok(Map.of(
-                "message", "Evaluation score overridden successfully",
-                "evaluation", updatedEval
-            ));
-
+            return ResponseEntity.ok(Map.of("message", "Score overridden", "evaluation", updatedEval));
         } catch (SecurityException e) {
-            // Teacher is not the owner of the class
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (IllegalArgumentException e) {
-            // Document or Evaluation not found
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Override failed: " + e.getMessage()));
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
     }
 
-    // Record to cleanly map the incoming JSON body: { "overallScore": 95 }
     public record OverrideRequest(Integer overallScore) {}
-
 
     private UUID getUserId(Authentication authentication) {
         String email = authentication.getName();
