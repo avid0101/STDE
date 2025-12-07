@@ -1,2 +1,2 @@
-export const APP_ID = "848241562970"; 
-export const GOOGLE_API_KEY = "AIzaSyBUO3WuXAF5c4e_FIKu9SKN3HTJraunVrs";
+export const APP_ID = import.meta.env.VITE_APP_ID;
+export const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY;
