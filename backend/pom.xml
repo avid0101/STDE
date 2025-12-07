@@ -143,6 +143,12 @@
 			<version>${modelmapper.version}</version>
 		</dependency>
 
+		<!-- OAuth2 Client -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-client</artifactId>
+		</dependency>
+
 		<!-- JWT: JJWT (io.jsonwebtoken) for JWT authentication -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
@@ -160,6 +166,18 @@
 			<artifactId>jjwt-jackson</artifactId>
 			<version>${jjwt.version}</version>
 			<scope>runtime</scope>
+		</dependency>
+
+		<!-- Google Client Libraries -->
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-drive</artifactId>
+			<version>v3-rev20230822-2.0.0</version>
+		</dependency>
+		<dependency>
+			<groupId>com.google.auth</groupId>
+			<artifactId>google-auth-library-oauth2-http</artifactId>
+			<version>1.23.0</version>
 		</dependency>
 
 	</dependencies>

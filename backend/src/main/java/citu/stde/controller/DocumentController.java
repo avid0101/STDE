@@ -3,12 +3,14 @@ package citu.stde.controller;
 import citu.stde.dto.DocumentDTO;
 import citu.stde.service.DocumentService;
 import citu.stde.repository.UserRepository;
+import citu.stde.entity.Document;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.List;
 import java.util.Map;
@@ -25,10 +27,13 @@ public class DocumentController {
     @PostMapping("/upload")
     public ResponseEntity<?> uploadDocument(
             @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "classId", required = false) UUID classId, // <--- Added optional parameter
             Authentication authentication) {
         try {
             UUID userId = extractUserIdFromAuth(authentication);
-            DocumentDTO document = documentService.uploadDocument(file, userId);
+            
+            // Pass classId to the service (it might be null, which is fine)
+            DocumentDTO document = documentService.uploadDocument(file, userId, classId);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "message", "Document uploaded successfully",
@@ -108,9 +113,35 @@ public class DocumentController {
         }
     }
 
+    @PostMapping("/upload-drive")
+    public ResponseEntity<?> uploadFromDrive(@RequestBody DriveUploadRequest request, Authentication authentication) {
+        try {
+            // 1. Get the current user
+            String email = authentication.getName();
+            UUID userId = userRepository.getIdByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            // 2. Call the service to perform the copy
+            Document savedDoc = documentService.copyFromGoogleDrive(
+                request.fileId(), 
+                request.classId(), 
+                userId
+            );
+
+            return ResponseEntity.ok(savedDoc);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "Drive import failed: " + e.getMessage()));
+        }
+    }
+
     private UUID extractUserIdFromAuth(Authentication authentication) {
         String email = authentication.getName();
         return userRepository.getIdByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
     }
+
+    public record DriveUploadRequest(String fileId, String classId) {}
 }

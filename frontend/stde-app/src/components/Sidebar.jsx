@@ -1,4 +1,3 @@
-// src/components/Sidebar.jsx
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import authService from "../services/authService";
@@ -8,26 +7,26 @@ export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState("student");
+  const [userRole, setUserRole] = useState(null); // null by default
 
-  // Extract the current path (without query/hash)
-  const activePath = location.pathname;
-
-  // Get user data on component mount
+  // On mount: get user data
   useEffect(() => {
     const currentUser = authService.getCurrentUser();
     if (currentUser) {
       setUser(currentUser);
-      // Set role based on userType from backend
-      const role = currentUser.userType?.toLowerCase() || "student";
-      setUserRole(role);
+      const role = currentUser.userType?.toLowerCase();
+      setUserRole(role); // "teacher" or "student"
+    } else {
+      setUser(null);
+      setUserRole(null);
     }
   }, []);
 
   // Logout handler
   const handleLogout = () => {
     authService.logout();
-    navigate("/login");
+    // Safer: always send to student login for now
+    navigate("/login/student");
   };
 
   // Teacher navigation items
@@ -44,14 +43,14 @@ export default function Sidebar() {
       label: "Classroom"
     },
     {
-      path: "/profile",
-      icon: (
-        <svg width="20" height="20" fill="none" stroke="currentColor">
-          <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      ),
-      label: "Profile"
+    path: "/teacher/profile", // same as for students if you want a shared profile page
+    icon: (
+      <svg width="20" height="20" fill="none" stroke="currentColor">
+        <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    label: "Profile"
     }
   ];
 
@@ -89,7 +88,16 @@ export default function Sidebar() {
     }
   ];
 
-  const navItems = userRole === "teacher" ? teacherNavItems : studentNavItems;
+  // Decide which nav to use
+  let navItems = [];
+  if (userRole === "teacher") navItems = teacherNavItems;
+  else if (userRole === "student") navItems = studentNavItems;
+
+  // If user data is missing, render nothing (safe fallback)
+  if (!user || !userRole) return null;
+
+  // Path highlighting
+  const activePath = location.pathname;
 
   return (
     <div className="sidebar">
@@ -98,13 +106,11 @@ export default function Sidebar() {
           <div className="logo-icon">S</div>
           <span className="logo-text">STDE Platform</span>
         </div>
-        {user && (
-          <div className="user-role">
-            <span className="role-badge">
-              {userRole === "teacher" ? "Teacher" : "Student"}
-            </span>
-          </div>
-        )}
+        <div className="user-role">
+          <span className="role-badge">
+            {userRole.charAt(0).toUpperCase() + userRole.slice(1)}
+          </span>
+        </div>
       </div>
       <nav className="sidebar-nav">
         {navItems.map((item) => (

@@ -1,13 +1,18 @@
-import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { APP_ID, GOOGLE_API_KEY } from '../services/configuration';
+
 import Sidebar from '../components/Sidebar';
 import '../css/AIEvaluate.css';
 import documentService from '../services/documentService';
 import evaluationService from '../services/evaluationService';
+import classroomService from '../services/classroomService';
 import authService from '../services/authService';
 
 export default function AIEvaluate() {
   const navigate = useNavigate();
+  const resultsRef = useRef(null);
+
   const [activeTab, setActiveTab] = useState('upload');
   const [dragActive, setDragActive] = useState(false);
 
@@ -18,23 +23,96 @@ export default function AIEvaluate() {
   const [documents, setDocuments] = useState([]);
   const [loadingDocuments, setLoadingDocuments] = useState(true);
 
-  // TestEvaluation state
-  const [documentId, setDocumentId] = useState('');
+  // Classroom State
+  const [classes, setClasses] = useState([]);
+  const [selectedClassId, setSelectedClassId] = useState('');
+
+  // Evaluation state
   const [currentResult, setCurrentResult] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorObj, setErrorObj] = useState(null);
+  const [analyzingId, setAnalyzingId] = useState(null);
 
   useEffect(() => {
     loadDocuments();
     fetchHistory();
+    loadClasses();
+    loadGoogleScript();
   }, []);
+
+  const loadGoogleScript = () => {
+    const script = document.createElement("script");
+    script.src = "https://apis.google.com/js/api.js";
+    script.onload = () => {
+      window.gapi.load('picker', () => {
+        console.log("Google Picker API loaded");
+      });
+    };
+    document.body.appendChild(script);
+  };
+
+  const handleGoogleLink = async () => {
+    setUploadError('');
+    try {
+      const response = await fetch('http://localhost:8080/api/auth/token', {
+        headers: { 'Authorization': `Bearer ${authService.getToken()}` } 
+      });
+      
+      if (!response.ok) throw new Error("Failed to authenticate with Google");
+      const data = await response.json();
+      const userToken = data.token;
+
+      if (window.google && window.google.picker) {
+        const picker = new window.google.picker.PickerBuilder()
+          .addView(window.google.picker.ViewId.DOCS)
+          .setOAuthToken(userToken)
+          .setDeveloperKey(GOOGLE_API_KEY)
+          .setAppId(APP_ID)
+          .setCallback(pickerCallback)
+          .build();
+        picker.setVisible(true);
+      }
+    } catch (error) {
+      console.error(error);
+      setUploadError("Could not open Google Drive. Please try re-logging in.");
+    }
+  };
+
+  const pickerCallback = async (data) => {
+    if (data.action === window.google.picker.Action.PICKED) {
+      const doc = data.docs[0];
+      const fileId = doc.id;
+      const fileName = doc.name;
+
+      try {
+        setUploading(true);
+        setUploadSuccess(`Importing "${fileName}" from Drive...`);
+        await documentService.uploadDriveFile(fileId, selectedClassId);
+        setUploadSuccess(`Successfully imported "${fileName}"!`);
+        loadDocuments();
+      } catch (error) {
+        setUploadError("Failed to import file from Drive.");
+      } finally {
+        setUploading(false);
+      }
+    }
+  };
+
+  const loadClasses = async () => {
+    try {
+      const data = await classroomService.getAllClassrooms();
+      setClasses(data);
+    } catch (error) {
+      console.error('Error loading classes:', error);
+    }
+  };
 
   const loadDocuments = async () => {
     try {
       setLoadingDocuments(true);
       const response = await documentService.getUserDocuments();
-      setDocuments(response. documents || []);
+      setDocuments(response.documents || []);
     } catch (error) {
       console.error('Error loading documents:', error);
     } finally {
@@ -51,14 +129,21 @@ export default function AIEvaluate() {
     }
   };
 
-  const handleRunEvaluation = async () => {
+  const handleRunEvaluation = async (docId) => {
     setLoading(true);
+    setAnalyzingId(docId);
     setErrorObj(null);
     setCurrentResult(null);
+
     try {
-      const data = await evaluationService.evaluateDocument(documentId);
+      const data = await evaluationService.evaluateDocument(docId);
       setCurrentResult(data);
       fetchHistory();
+      
+      setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+
     } catch (err) {
       const rawMsg = err.message || "Unknown error";
       if (rawMsg.includes("TYPE:")) {
@@ -69,17 +154,20 @@ export default function AIEvaluate() {
       }
     } finally {
       setLoading(false);
+      setAnalyzingId(null);
     }
   };
 
-  const handleGetEvaluation = async (idToFetch) => {
+  const handleGetEvaluation = async (documentId) => {
     setLoading(true);
     setErrorObj(null);
     setCurrentResult(null);
     try {
-      const id = idToFetch || documentId;
-      const data = await evaluationService.getEvaluation(id);
+      const data = await evaluationService.getEvaluation(documentId);
       setCurrentResult(data);
+      setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
     } catch (err) {
       setErrorObj({ type: 'FETCH_ERROR', message: err.message });
     } finally {
@@ -89,10 +177,10 @@ export default function AIEvaluate() {
 
   const getErrorStyle = (type) => {
     switch (type) {
-      case 'RATE_LIMIT': return { bg: '#fff7ed', border: '#f97316', color: '#c2410c', icon: '⏳' };
-      case 'DUPLICATE': return { bg: '#eff6ff', border: '#3b82f6', color: '#1d4ed8', icon: 'ℹ️' };
-      case 'SERVER_ERROR': return { bg: '#fef2f2', border: '#ef4444', color: '#b91c1c', icon: '💥' };
-      default: return { bg: '#fef2f2', border: '#ef4444', color: '#991b1b', icon: '⚠️' };
+      case 'RATE_LIMIT': return { bg: '#fff7ed', border: '#f97316', color: '#c2410c', icon: 'Rate Limit' };
+      case 'DUPLICATE': return { bg: '#eff6ff', border: '#3b82f6', color: '#1d4ed8', icon: 'Info' };
+      case 'SERVER_ERROR': return { bg: '#fef2f2', border: '#ef4444', color: '#b91c1c', icon: 'Server Error' };
+      default: return { bg: '#fef2f2', border: '#ef4444', color: '#991b1b', icon: 'Warning' };
     }
   };
 
@@ -108,9 +196,8 @@ export default function AIEvaluate() {
 
   const handleDrop = (e) => {
     e.preventDefault();
-    e. stopPropagation();
+    e.stopPropagation();
     setDragActive(false);
-
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFile(e.dataTransfer.files[0]);
     }
@@ -118,7 +205,7 @@ export default function AIEvaluate() {
 
   const handleFileInput = (e) => {
     if (e.target.files && e.target.files[0]) {
-      handleFile(e. target.files[0]);
+      handleFile(e.target.files[0]);
     }
   };
 
@@ -130,27 +217,24 @@ export default function AIEvaluate() {
       setUploadError('Please select a file');
       return;
     }
-
-    const allowedTypes = [
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml. document',
-      'text/plain'
-    ];
+    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
     if (!allowedTypes.includes(file.type)) {
       setUploadError('Invalid file type. Only PDF, DOCX, and TXT files are allowed.');
       return;
     }
-
-    const maxSize = 10 * 1024 * 1024;
-    if (file.size > maxSize) {
+    if (file.size > 10 * 1024 * 1024) {
       setUploadError('File size exceeds 10MB limit.');
       return;
     }
 
     try {
       setUploading(true);
-      const response = await documentService.uploadDocument(file);
+      await documentService.uploadDocument(file, selectedClassId);
       setUploadSuccess(`Document "${file.name}" uploaded successfully!`);
+      if (selectedClassId) {
+        const cls = classes.find(c => c.id === selectedClassId);
+        if (cls) setUploadSuccess(`Document uploaded to "${cls.name}" folder in Drive!`);
+      }
       await loadDocuments();
       setTimeout(() => setUploadSuccess(''), 5000);
     } catch (error) {
@@ -160,14 +244,8 @@ export default function AIEvaluate() {
     }
   };
 
-  const handleGoogleLink = () => {
-    alert('Google Drive integration coming soon!');
-  };
-
   const handleDeleteDocument = async (documentId, filename) => {
-    if (! window.confirm(`Are you sure you want to delete "${filename}"?`)) {
-      return;
-    }
+    if (!window.confirm(`Are you sure you want to delete "${filename}"?`)) return;
     try {
       await documentService.deleteDocument(documentId);
       setUploadSuccess(`Document "${filename}" deleted successfully!`);
@@ -182,28 +260,20 @@ export default function AIEvaluate() {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math. log(bytes) / Math.log(k));
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
-    return date. toLocaleDateString() + ' ' + date.toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const getFileIcon = (fileType) => {
-    if (fileType === 'application/pdf') return '📄';
-    if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return '📝';
-    if (fileType === 'text/plain') return '📃';
-    return '📎';
-  };
-
-  const handleLogout = () => {
-    authService.logout();
-    navigate('/login');
+    if (fileType === 'application/pdf') return 'PDF';
+    if (fileType?.includes('word')) return 'DOCX';
+    if (fileType === 'text/plain') return 'TXT';
+    return 'FILE';
   };
 
   return (
@@ -211,7 +281,6 @@ export default function AIEvaluate() {
       <Sidebar />
 
       <div className="main-content">
-        {/* Header */}
         <div className="header">
           <div className="breadcrumb">
             <span className="breadcrumb-item">Pages</span>
@@ -221,25 +290,21 @@ export default function AIEvaluate() {
           <h1 className="page-title">AI Evaluate</h1>
         </div>
 
-        {/* Success/Error Messages */}
         {uploadError && (
           <div className="alert alert-error">
-            <span className="alert-icon">⚠️</span>
-            {uploadError}
+            <span className="alert-icon">Warning:</span> {uploadError}
             <button className="alert-close" onClick={() => setUploadError('')}>×</button>
           </div>
         )}
         {uploadSuccess && (
           <div className="alert alert-success">
-            <span className="alert-icon">✅</span>
-            {uploadSuccess}
+            <span className="alert-icon">Success:</span> {uploadSuccess}
             <button className="alert-close" onClick={() => setUploadSuccess('')}>×</button>
           </div>
         )}
 
-        {/* Statistics Cards */}
         <div className="stats-grid">
-          <div className="stat-card">
+           <div className="stat-card">
             <div className="stat-icon black">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -248,277 +313,246 @@ export default function AIEvaluate() {
             <div className="stat-content">
               <div className="stat-label">Documents</div>
               <div className="stat-value">{documents.length}</div>
-              <div className="stat-change positive">+{documents.length} uploaded</div>
             </div>
           </div>
-
           <div className="stat-card">
             <div className="stat-icon pink">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-. 656.126-1.283. 356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                 <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
             <div className="stat-content">
               <div className="stat-label">Evaluations</div>
               <div className="stat-value">{history.length}</div>
-              <div className="stat-change positive">+{history.length} completed</div>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon green">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <div className="stat-content">
-              <div className="stat-label">Avg Score</div>
-              <div className="stat-value">
-                {history.length > 0 
-                  ? Math.round(history.reduce((sum, h) => sum + (h.overallScore || 0), 0) / history.length)
-                  : 0}
-              </div>
-              <div className="stat-change positive">Overall average</div>
-            </div>
-          </div>
-
-          <div className="stat-card">
-            <div className="stat-icon blue">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <div className="stat-content">
-              <div className="stat-label">Total Analysis</div>
-              <div className="stat-value">{history.length}</div>
-              <div className="stat-change positive">All time</div>
             </div>
           </div>
         </div>
 
-        {/* Upload Section */}
         <div className="upload-section">
           <h2 className="section-title">Upload Testing Documentation</h2>
+          
+          <div style={{ marginBottom: '1.5rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#374151', fontSize: '0.9rem' }}>
+              Select Destination Class (Folder)
+            </label>
+            <select 
+              value={selectedClassId}
+              onChange={(e) => setSelectedClassId(e.target.value)}
+              style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #d1d5db' }}
+            >
+              <option value="">-- No Class (Upload to My Drive Root) --</option>
+              {classes.map(cls => (
+                <option key={cls.id} value={cls.id}>{cls.name} - {cls.section}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="upload-tabs">
             <button 
-              className={`tab-btn ${activeTab === 'upload' ? 'active' : ''}`}
+              className={`tab-btn ${activeTab === 'upload' ? 'active' : ''}`} 
               onClick={() => setActiveTab('upload')}
+              style={{ fontWeight: '600' }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M7 16a4 4 0 01-. 88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              Upload File
+              Upload Local File
             </button>
             <button 
-              className={`tab-btn ${activeTab === 'google' ? 'active' : ''}`}
-              onClick={() => {
-                setActiveTab('google');
-                handleGoogleLink();
-              }}
+              className={`tab-btn ${activeTab === 'google' ? 'active' : ''}`} 
+              onClick={() => { setActiveTab('google'); handleGoogleLink(); }}
+              style={{ fontWeight: '600' }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M13. 828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-. 758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              Google Link
+              Select from Google Drive
             </button>
           </div>
 
           <div 
             className={`drop-zone ${dragActive ? 'active' : ''} ${uploading ? 'uploading' : ''}`}
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
+            onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}
           >
             <div className="drop-icon">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115. 9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3v-8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3v-8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </div>
-            <p className="drop-text">
-              {uploading ? 'Uploading...' : 'Drop your testing documentation here'}
-            </p>
-            <p className="drop-subtext">Supported formats: PDF, DOCX, TXT (Max 10MB)</p>
-            <input 
-              type="file" 
-              id="file-input" 
-              accept=".pdf,.docx,. txt" 
-              onChange={handleFileInput}
-              disabled={uploading}
-              style={{ display: 'none' }}
-            />
-            <button 
-              className="select-file-btn"
-              onClick={() => document.getElementById('file-input').click()}
-              disabled={uploading}
-            >
-              {uploading ? 'Uploading...' : 'Select File'}
+            <p className="drop-text">{uploading ? 'Processing...' : 'Drop files here or click select'}</p>
+            <input type="file" id="file-input" accept=".pdf,.docx,.txt" onChange={handleFileInput} disabled={uploading} style={{ display: 'none' }} />
+            <button className="select-file-btn" onClick={() => document.getElementById('file-input').click()} disabled={uploading}>
+              {uploading ? 'Please wait...' : 'Select File'}
             </button>
           </div>
         </div>
 
-        {/* Run New Evaluation Section */}
-        <div className="upload-section">
-          <h2 className="section-title">🚀 Run New Evaluation</h2>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', fontSize: '0.875rem' }}>
-              Document UUID
-            </label>
-            <input
-              type="text"
-              value={documentId}
-              onChange={(e) => setDocumentId(e.target.value)}
-              placeholder="e.g.  550e8400-e29b-41d4-a716-446655440000"
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                borderRadius: '6px',
-                border: '1px solid #cbd5e1',
-                fontSize: '1rem',
-                boxSizing: 'border-box'
-              }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-            <button 
-              onClick={handleRunEvaluation} 
-              disabled={loading || ! documentId}
-              style={{
-                flex: 1,
-                padding: '0.75rem',
-                borderRadius: '6px',
-                border: 'none',
-                fontWeight: '600',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                opacity: loading ? 0.7 : 1
-              }}
-            >
-              {loading ? 'Processing...' : 'Run Analysis (POST)'}
-            </button>
-
-            <button 
-              onClick={() => handleGetEvaluation()} 
-              disabled={loading || !documentId}
-              style={{
-                flex: 1,
-                padding: '0.75rem',
-                borderRadius: '6px',
-                border: 'none',
-                fontWeight: '600',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                backgroundColor: '#e2e8f0',
-                color: '#475569'
-              }}
-            >
-              Get Result (GET)
-            </button>
-          </div>
-
-          {/* ERROR DISPLAY */}
+        <div ref={resultsRef}>
           {errorObj && (
-            <div style={{
-              marginTop: '1rem',
-              padding: '1rem',
-              backgroundColor: getErrorStyle(errorObj.type). bg,
-              border: `1px solid ${getErrorStyle(errorObj.type).border}`,
-              color: getErrorStyle(errorObj. type).color,
-              borderRadius: '6px',
-              fontSize: '0.9rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}>
-              <span style={{fontSize: '1. 2rem'}}>{getErrorStyle(errorObj.type). icon}</span>
-              <div>
-                <strong style={{display: 'block', fontSize: '0.8rem', opacity: 0.8}}>
-                  {errorObj.type. replace('_', ' ')} ERROR
-                </strong>
-                {errorObj.message}
+             <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: getErrorStyle(errorObj.type).bg, border: `1px solid ${getErrorStyle(errorObj.type).border}`, color: getErrorStyle(errorObj.type).color, borderRadius: '6px' }}>
+              <strong>{getErrorStyle(errorObj.type).icon}:</strong> {errorObj.message}
+            </div>
+          )}
+
+          {currentResult && (
+            <div className="upload-section" style={{ border: '2px solid #3b82f6', background: 'linear-gradient(to bottom, #ffffff, #f8fafc)' }}>
+              <h2 className="section-title">Analysis Result</h2>
+              
+              {/* Score Cards */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
+                <ScoreBadge label="Overall" score={currentResult.overallScore} isPrimary={true} />
+                <ScoreBadge label="Completeness" score={currentResult.completenessScore} />
+                <ScoreBadge label="Clarity" score={currentResult.clarityScore} />
+                <ScoreBadge label="Consistency" score={currentResult.consistencyScore} />
+                <ScoreBadge label="Verification" score={currentResult.verificationScore} />
+              </div>
+
+              {/* Overall Feedback */}
+              <div style={{ 
+                backgroundColor: '#eff6ff', 
+                border: '1px solid #bfdbfe', 
+                borderRadius: '8px', 
+                padding: '1rem', 
+                marginBottom: '1.5rem' 
+              }}>
+                <h3 style={{ 
+                  fontSize: '0.95rem', 
+                  fontWeight: '600', 
+                  color: '#1e40af', 
+                  marginBottom: '0.5rem' 
+                }}>
+                  Overall Assessment
+                </h3>
+                <p style={{ fontSize: '0.9rem', color: '#1e3a8a', lineHeight: '1.6', margin: 0 }}>
+                  {currentResult.overallFeedback}
+                </p>
+              </div>
+
+              {/* Detailed Feedback Sections */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <FeedbackCard 
+                  title="Completeness" 
+                  score={currentResult.completenessScore}
+                  feedback={currentResult.completenessFeedback}
+                  color="#8b5cf6"
+                />
+                <FeedbackCard 
+                  title="Clarity" 
+                  score={currentResult.clarityScore}
+                  feedback={currentResult.clarityFeedback}
+                  color="#06b6d4"
+                />
+                <FeedbackCard 
+                  title="Consistency" 
+                  score={currentResult.consistencyScore}
+                  feedback={currentResult.consistencyFeedback}
+                  color="#10b981"
+                />
+                <FeedbackCard 
+                  title="Verification" 
+                  score={currentResult.verificationScore}
+                  feedback={currentResult.verificationFeedback}
+                  color="#f59e0b"
+                />
+              </div>
+
+              {/* Metadata */}
+              <div style={{ 
+                marginTop: '1.5rem', 
+                padding: '1rem', 
+                backgroundColor: '#f1f5f9', 
+                borderRadius: '6px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '0.85rem',
+                color: '#64748b'
+              }}>
+                <div>
+                  <strong>Document:</strong> {currentResult.filename}
+                </div>
+                <div>
+                  <strong>Analyzed:</strong> {new Date(currentResult.createdAt).toLocaleString()}
+                </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* API Response Data */}
-        {currentResult && (
-          <div className="upload-section">
-            <h2 className="section-title">🔍 API Response Data</h2>
-            <div style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '1rem',
-              marginBottom: '1. 5rem',
-              paddingBottom: '1.5rem',
-              borderBottom: '1px dashed #cbd5e1'
-            }}>
-              <ScoreBadge label="Overall" score={currentResult.overallScore} />
-              <ScoreBadge label="Completeness" score={currentResult.completenessScore} />
-              <ScoreBadge label="Clarity" score={currentResult.clarityScore} />
-              <ScoreBadge label="Consistency" score={currentResult.consistencyScore} />
-              <ScoreBadge label="Verification" score={currentResult.verificationScore} />
-            </div>
-            <pre style={{
-              backgroundColor: '#1e293b',
-              color: '#e2e8f0',
-              padding: '1rem',
-              borderRadius: '8px',
-              overflowX: 'auto',
-              fontSize: '0.85rem',
-              fontFamily: 'monospace'
-            }}>
-              {JSON.stringify(currentResult, null, 2)}
-            </pre>
-          </div>
-        )}
-
-        {/* My Uploads and History Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
-          {/* My Uploads - Left Half */}
+          
+          {/* My Uploads */}
           <div className="my-uploads-section" style={{ marginBottom: 0 }}>
             <div className="section-header">
               <h2 className="section-title">My Uploads</h2>
-              <button className="view-all-btn">
-                View all
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path d="M9 5l7 7-7 7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
             </div>
             <div className="uploads-list">
-              {loadingDocuments ?  (
-                <p className="no-uploads">Loading documents...</p>
-              ) : documents.length === 0 ? (
-                <p className="no-uploads">No uploads yet.  Start by uploading your first document. </p>
-              ) : (
+              {loadingDocuments ? <p className="no-uploads">Loading...</p> : documents.length === 0 ? <p className="no-uploads">No uploads yet.</p> : (
                 <div className="documents-grid" style={{ gridTemplateColumns: '1fr' }}>
                   {documents.map((doc) => (
                     <div key={doc.id} className="document-card">
-                      <div className="document-icon-large">
+                      <div className="document-icon-large" style={{ 
+                        backgroundColor: '#e0e7ff', 
+                        color: '#4f46e5',
+                        fontWeight: '600',
+                        fontSize: '0.75rem',
+                        padding: '8px',
+                        borderRadius: '6px'
+                      }}>
                         {getFileIcon(doc.fileType)}
                       </div>
                       <div className="document-details">
                         <h3 className="document-filename">{doc.filename}</h3>
-                        <p className="document-meta">
-                          {formatFileSize(doc.fileSize)} • {formatDate(doc.uploadDate)}
-                        </p>
-                        <span className={`document-badge status-${doc.status?. toLowerCase()}`}>
+                        <p className="document-meta">{formatFileSize(doc.fileSize)} • {formatDate(doc.uploadDate)}</p>
+                        
+                        <span className={`document-badge status-${doc.status?.toLowerCase() || 'uploaded'}`} style={{ marginTop: '5px', display: 'inline-block' }}>
                           {doc.status}
                         </span>
                       </div>
-                      <div className="document-actions">
+
+                      <div className="document-actions" style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+                        
                         <button 
                           className="action-btn"
-                          onClick={() => handleDeleteDocument(doc.id, doc.filename)}
-                          title="Delete"
+                          onClick={() => handleRunEvaluation(doc.id)}
+                          disabled={loading}
+                          title="Run AI Analysis"
+                          style={{ 
+                            color: 'white', 
+                            backgroundColor: '#3b82f6', 
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            fontSize: '0.85rem',
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                            minWidth: '85px',
+                            border: 'none',
+                            cursor: 'pointer'
+                          }}
                         >
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M19 7l-. 867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
+                          {analyzingId === doc.id ? (
+                             <>
+                               <span className="spinner-small" style={{border: '2px solid white', borderTop: '2px solid transparent'}}></span> 
+                               Analyzing...
+                             </>
+                          ) : (
+                             <>Analyze</>
+                          )}
+                        </button>
+
+                        <button 
+                          className="action-btn" 
+                          onClick={() => handleDeleteDocument(doc.id, doc.filename)} 
+                          title="Delete"
+                          style={{ 
+                            color: 'white', 
+                            backgroundColor: '#ef4444', 
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            fontSize: '0.85rem',
+                            fontWeight: '600',
+                            minWidth: '85px',
+                            border: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Delete
                         </button>
                       </div>
                     </div>
@@ -528,91 +562,136 @@ export default function AIEvaluate() {
             </div>
           </div>
 
-          {/* History - Right Half */}
+          {/* History */}
           <div className="my-uploads-section" style={{ marginBottom: 0 }}>
             <div className="section-header">
-              <h2 className="section-title">📜 History (Module 9)</h2>
-              <button 
-                onClick={fetchHistory} 
-                className="view-all-btn"
-                style={{ cursor: 'pointer' }}
-              >
-                🔄 Refresh
-              </button>
+              <h2 className="section-title">History</h2>
+              <button onClick={fetchHistory} className="view-all-btn">Refresh</button>
             </div>
-            <div style={{
-              maxHeight: '400px',
-              overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.5rem'
-            }}>
-              {history.length === 0 ? (
-                <p className="no-uploads">No evaluations found. </p>
-              ) : (
-                history.map((evalItem) => (
-                  <div 
-                    key={evalItem. id} 
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '0.75rem',
-                      backgroundColor: '#f8fafc',
-                      borderRadius: '6px',
-                      border: '1px solid #e2e8f0'
+            <div style={{ maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {history.map((evalItem) => (
+                <div key={evalItem.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div>
+                    <div style={{ fontWeight: '600', fontSize: '0.9rem', color: '#334155' }}>{evalItem.filename || 'Unknown File'}</div>
+                    <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Score: <strong>{evalItem.overallScore}</strong> • {new Date(evalItem.createdAt).toLocaleDateString()}</div>
+                  </div>
+                  <button 
+                    onClick={() => handleGetEvaluation(evalItem.documentId)} 
+                    style={{ 
+                      padding: '0.5rem 1rem', 
+                      backgroundColor: '#3b82f6', 
+                      color: 'white',
+                      border: 'none', 
+                      borderRadius: '6px', 
+                      fontSize: '0.85rem',
+                      fontWeight: '600',
+                      cursor: 'pointer' 
                     }}
                   >
-                    <div>
-                      <div style={{ fontWeight: '600', fontSize: '0.9rem', color: '#334155' }}>
-                        {evalItem.filename || 'Unknown File'}
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                        Score: <strong>{evalItem.overallScore}</strong> • {new Date(evalItem.createdAt).toLocaleDateString()}
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => handleGetEvaluation(evalItem. documentId)}
-                      style={{
-                        padding: '0.4rem 0.8rem',
-                        backgroundColor: 'white',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '4px',
-                        fontSize: '0.75rem',
-                        cursor: 'pointer',
-                        color: '#475569'
-                      }}
-                    >
-                      View JSON
-                    </button>
-                  </div>
-                ))
-              )}
+                    View Result
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
+
         </div>
       </div>
     </div>
   );
 }
 
-// Helper component for score bubbles
-const ScoreBadge = ({ label, score }) => (
-  <div style={{
-    display: 'flex', 
-    flexDirection: 'column', 
-    alignItems: 'center', 
-    background: '#f8fafc', 
-    padding: '10px', 
-    borderRadius: '8px',
+const ScoreBadge = ({ label, score, isPrimary }) => {
+  const getScoreColor = (score) => {
+    if (score >= 85) return '#10b981';
+    if (score >= 70) return '#f59e0b';
+    return '#ef4444';
+  };
+
+  return (
+    <div style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      alignItems: 'center', 
+      background: isPrimary ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' : '#ffffff',
+      padding: isPrimary ? '1.25rem 1.5rem' : '1rem 1.25rem',
+      borderRadius: '10px', 
+      border: isPrimary ? 'none' : '2px solid #e2e8f0',
+      minWidth: isPrimary ? '120px' : '100px',
+      boxShadow: isPrimary ? '0 4px 6px -1px rgba(59, 130, 246, 0.3)' : '0 1px 3px 0 rgba(0, 0, 0, 0.1)'
+    }}>
+      <span style={{
+        fontSize: isPrimary ? '32px' : '24px', 
+        fontWeight: 'bold', 
+        color: isPrimary ? '#ffffff' : getScoreColor(score),
+        marginBottom: '4px'
+      }}>
+        {score}
+      </span>
+      <span style={{
+        fontSize: isPrimary ? '0.75rem' : '0.7rem', 
+        color: isPrimary ? '#dbeafe' : '#64748b', 
+        textTransform: 'uppercase',
+        fontWeight: '600',
+        letterSpacing: '0.5px'
+      }}>
+        {label}
+      </span>
+    </div>
+  );
+};
+
+const FeedbackCard = ({ title, score, feedback, color }) => (
+  <div style={{ 
+    backgroundColor: '#ffffff',
     border: '1px solid #e2e8f0',
-    minWidth: '80px'
+    borderRadius: '8px',
+    padding: '1rem',
+    position: 'relative',
+    overflow: 'hidden'
   }}>
-    <span style={{fontSize: '20px', fontWeight: 'bold', color: score > 70 ? '#10b981' : '#f59e0b'}}>
-      {score}
-    </span>
-    <span style={{fontSize: '12px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px'}}>
-      {label}
-    </span>
+    <div style={{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: '4px',
+      height: '100%',
+      backgroundColor: color
+    }}></div>
+    <div style={{ paddingLeft: '0.5rem' }}>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '0.75rem'
+      }}>
+        <h4 style={{ 
+          fontSize: '0.9rem', 
+          fontWeight: '600', 
+          color: '#1e293b',
+          margin: 0
+        }}>
+          {title}
+        </h4>
+        <span style={{
+          fontSize: '1.1rem',
+          fontWeight: 'bold',
+          color: color,
+          backgroundColor: `${color}15`,
+          padding: '2px 10px',
+          borderRadius: '12px'
+        }}>
+          {score}
+        </span>
+      </div>
+      <p style={{ 
+        fontSize: '0.85rem', 
+        color: '#475569', 
+        lineHeight: '1.5',
+        margin: 0
+      }}>
+        {feedback}
+      </p>
+    </div>
   </div>
 );
