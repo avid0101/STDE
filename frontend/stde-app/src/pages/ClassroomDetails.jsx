@@ -4,6 +4,8 @@ import Sidebar from "../components/Sidebar";
 import classroomService from "../services/classroomService";
 import documentService from "../services/documentService"; 
 import evaluationService from "../services/evaluationService";
+import authService from "../services/authService";
+import { APP_ID, GOOGLE_API_KEY } from '../services/configuration'; 
 import "../css/ClassroomDetails.css"; 
 
 export default function ClassroomDetails() {
@@ -12,20 +14,55 @@ export default function ClassroomDetails() {
   
   const [classroom, setClassroom] = useState(null);
   const [submissions, setSubmissions] = useState([]);
+  const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('submissions');
+  
+  // UI States
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportData, setReportData] = useState(null); 
   const [modalLoading, setModalLoading] = useState(false);
+  const [processingId, setProcessingId] = useState(null);
+  
+  // Upload States
+  const [uploading, setUploading] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false); 
+  
+  const user = authService.getCurrentUser();
+  const isTeacher = user?.userType === 'TEACHER';
 
   useEffect(() => {
     loadClassroomData();
+    if (!isTeacher) loadGoogleScript(); // Load script for students
   }, [id]);
+
+  useEffect(() => {
+    if (activeTab === 'students' && students.length === 0 && isTeacher) {
+      loadStudents();
+    }
+  }, [activeTab]);
+
+  const loadGoogleScript = () => {
+    if (!window.gapi) {
+      const script = document.createElement("script");
+      script.src = "https://apis.google.com/js/api.js";
+      script.onload = () => {
+        window.gapi.load('picker', () => console.log("Picker loaded"));
+      };
+      document.body.appendChild(script);
+    }
+  };
 
   const loadClassroomData = async () => {
     try {
       const all = await classroomService.getAllClassrooms();
-      const cls = all.find(c => c.id === id);
+      let cls;
+      if (isTeacher) {
+          cls = all.find(c => c.id === id);
+      } else {
+          const studentClasses = await classroomService.getStudentClassrooms();
+          cls = studentClasses.find(c => c.id === id);
+      }
       setClassroom(cls);
 
       const realDocs = await documentService.getDocumentsByClass(id);
@@ -34,10 +71,11 @@ export default function ClassroomDetails() {
         id: doc.id,
         studentName: doc.studentName || "Unknown Uploader", 
         filename: doc.filename,
-        driveFileId: doc.driveFileId, // ✅ Add driveFileId for opening in browser
+        driveFileId: doc.driveFileId,
         score: doc.overallScore !== null ? doc.overallScore : "-", 
         status: doc.status,
-        date: new Date(doc.uploadDate).toLocaleDateString()
+        isSubmitted: doc.isSubmitted,
+        date: new Date(doc.uploadDate).toLocaleDateString() + ' ' + new Date(doc.uploadDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
       }));
 
       setSubmissions(tableData);
@@ -50,11 +88,104 @@ export default function ClassroomDetails() {
     }
   };
 
-  const handleOpenDrive = () => {
-    if (classroom && classroom.driveFolderId) {
-      window.open(`https://drive.google.com/drive/folders/${classroom.driveFolderId}`, '_blank');
-    } else {
-      alert("No Google Drive folder linked to this class.");
+  const loadStudents = async () => {
+    try {
+      const data = await classroomService.getClassStudents(id);
+      setStudents(data);
+    } catch (error) {
+      console.error("Error loading students:", error);
+    }
+  };
+
+  // Handle File Upload (Local)
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setUploading(true);
+    try {
+      // Upload directly to THIS class ID
+      await documentService.uploadDocument(file, id); 
+      alert("Document uploaded successfully!");
+      setShowUploadModal(false);
+      loadClassroomData();
+    } catch (error) {
+      alert("Upload failed: " + error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Handle Google Drive Import
+  const handleGoogleImport = async () => {
+    try {
+      const response = await fetch('http://localhost:8080/api/auth/token', {
+        headers: { 'Authorization': `Bearer ${authService.getToken()}` } 
+      });
+      const data = await response.json();
+      const userToken = data.token;
+
+      if (window.google && window.google.picker) {
+        const picker = new window.google.picker.PickerBuilder()
+          .addView(window.google.picker.ViewId.DOCS)
+          .setOAuthToken(userToken)
+          .setDeveloperKey(GOOGLE_API_KEY)
+          .setAppId(APP_ID)
+          .setCallback(pickerCallback)
+          .build();
+        picker.setVisible(true);
+      }
+    } catch (error) {
+      alert("Could not open Google Drive. Please try re-logging in.");
+    }
+  };
+
+  const pickerCallback = async (data) => {
+    if (data.action === window.google.picker.Action.PICKED) {
+      const doc = data.docs[0];
+      setUploading(true);
+      try {
+        await documentService.uploadDriveFile(doc.id, id);
+        alert(`Successfully imported "${doc.name}"!`);
+        setShowUploadModal(false);
+        loadClassroomData();
+      } catch (error) {
+        alert("Failed to import file.");
+      } finally {
+        setUploading(false);
+      }
+    }
+  };
+
+  // ... (Keep handleAnalyze, handleSubmit, handleViewReport, handleOverride, handleOpenDocument, getStatusStyle)
+  // [OMITTED FOR BREVITY - KEEP YOUR EXISTING HELPER FUNCTIONS FROM PREVIOUS STEP HERE]
+  
+  // (Pasting the critical logic to ensure the file works)
+  const handleAnalyze = async (documentId) => {
+    if(!window.confirm("Run AI Analysis on this document? This counts towards your quota.")) return;
+    setProcessingId(documentId);
+    try {
+      await evaluationService.evaluateDocument(documentId);
+      alert("Analysis complete! Check the report.");
+      loadClassroomData();
+    } catch (error) {
+      alert("Analysis failed: " + error.message);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleSubmit = async (documentId) => {
+    if(!window.confirm("Are you sure you want to turn in this document? You cannot change it afterwards.")) return;
+    setProcessingId(documentId);
+    try {
+      await documentService.submitDocument(documentId);
+      alert("Document submitted successfully!");
+      loadClassroomData();
+    } catch (error) {
+      alert("Submission failed: " + error.message);
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -62,12 +193,10 @@ export default function ClassroomDetails() {
     setModalLoading(true);
     setReportData(null);
     setShowReportModal(true);
-
     try {
         const data = await evaluationService.getDetailedEvaluation(documentId);
         setReportData({ ...data, filename });
     } catch (error) {
-        console.error("Error viewing report:", error);
         setReportData({ error: true, message: error.message, filename });
     } finally {
         setModalLoading(false);
@@ -75,48 +204,27 @@ export default function ClassroomDetails() {
   };
 
   const handleOverride = async (documentId, currentScore) => {
-    const newScore = prompt(`Enter new Professor Score (0-100) to override current score of ${currentScore}:`);
-
+    const newScore = prompt(`Enter new Professor Score (0-100):`);
     if (newScore === null) return; 
-    
     const scoreInt = parseInt(newScore);
-
-    if (isNaN(scoreInt) || scoreInt < 0 || scoreInt > 100) {
-      alert("Invalid score. Please enter a number between 0 and 100.");
-      return;
-    }
-    
-    try {
-      const response = await evaluationService.overrideScore(documentId, scoreInt);
-      
-      alert(`Score successfully updated to ${response.evaluation.overallScore}!`);
-      
-      loadClassroomData(); 
-
-    } catch (error) {
-      console.error("Override failed:", error);
-      alert("Error overriding score: " + (error.message || "Unauthorized or invalid input."));
-    }
+    if (isNaN(scoreInt) || scoreInt < 0 || scoreInt > 100) { alert("Invalid score."); return; }
+    try { await evaluationService.overrideScore(documentId, scoreInt); alert(`Score updated!`); loadClassroomData(); } catch (error) { alert("Error: " + error.message); }
   };
 
-  // ✅ NEW: Handler to open document in Google Drive viewer
   const handleOpenDocument = (driveFileId) => {
-    if (driveFileId) {
-      window.open(`https://drive.google.com/file/d/${driveFileId}/view`, '_blank');
-    } else {
-      alert("Document file ID not available.");
-    }
+    if (driveFileId) window.open(`https://drive.google.com/file/d/${driveFileId}/view`, '_blank');
+    else alert("Document file ID not available.");
   };
 
-  const getStatusStyle = (status) => {
-    const statusStyles = {
-      'OVERRIDDEN': { backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' },
-      'EVALUATED': { backgroundColor: '#dbeafe', color: '#1e40af', border: '1px solid #60a5fa' },
-      'COMPLETED': { backgroundColor: '#d1fae5', color: '#065f46', border: '1px solid #34d399' },
-      'UPLOADED': { backgroundColor: '#f3f4f6', color: '#4b5563', border: '1px solid #d1d5db' },
-      'PENDING': { backgroundColor: '#f3f4f6', color: '#4b5563', border: '1px solid #d1d5db' }
-    };
-    return statusStyles[status] || statusStyles['PENDING'];
+  const getStatusStyle = (status, isSubmitted) => {
+    if (isSubmitted) return { backgroundColor: '#d1fae5', color: '#065f46', border: '1px solid #34d399' };
+    if (status === 'COMPLETED') return { backgroundColor: '#dbeafe', color: '#1e40af', border: '1px solid #60a5fa' };
+    return { backgroundColor: '#f3f4f6', color: '#4b5563', border: '1px solid #d1d5db' };
+  };
+
+  const handleOpenDrive = () => {
+    if (classroom && classroom.driveFolderId) window.open(`https://drive.google.com/drive/folders/${classroom.driveFolderId}`, '_blank');
+    else alert("No Google Drive folder linked to this class.");
   };
 
   if (loading) return <div className="loading">Loading Class Details...</div>;
@@ -127,71 +235,57 @@ export default function ClassroomDetails() {
       <Sidebar />
       <div className="teacher-classroom">
         
-        {/* HEADER SECTION */}
         <div className="classroom-header-details">
-          <button onClick={() => navigate(-1)} className="back-btn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M19 12H5M12 19l-7-7 7-7"/>
-            </svg>
-            Back
-          </button>
-          
+          <button onClick={() => navigate(-1)} className="back-btn">Back</button>
           <div className="header-content">
             <div className="header-info">
               <h1 className="classroom-title">{classroom.name}</h1>
               <p className="classroom-subtitle">{classroom.section}</p>
-              
               <div className="class-code-badge">
                 <span className="badge-label">Class Code:</span>
                 <span className="badge-code">{classroom.classCode}</span>
               </div>
             </div>
 
-            <button className="drive-btn" onClick={handleOpenDrive}>
-              <svg width="20" height="20" viewBox="0 0 87.3 78">
-                <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
-                <path d="M43.65 25l13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2l13.75 23.8z" fill="#00ac47"/>
-                <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l3.85-6.65c.8-1.4 1.2-2.95 1.2-4.5h-27.5l13.75 23.8z" fill="#ea4335"/>
-                <path d="M43.65 25L29.9 1.2c-1.35.8-2.5 1.9-3.3 3.3l-26.6 46.1c-.8 1.35-1.2 2.9-1.2 4.5h27.5L43.65 25z" fill="#00832d"/>
-                <path d="M59.7 53.05h27.5c0-1.55-.4-3.1-1.2-4.5L59.4 2.45c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25l16.05 28.05z" fill="#2684fc"/>
-                <path d="M73.4 76.8L59.7 53.05H27.5l13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h18.5c1.6 0 3.15-.45 4.5-1.2z" fill="#ffba00"/>
-              </svg>
-              Open Class Folder
-            </button>
+            {isTeacher ? (
+              <button className="drive-btn" onClick={handleOpenDrive}>Open Class Folder</button>
+            ) : (
+              <button 
+                className="drive-btn" 
+                onClick={() => setShowUploadModal(true)}
+                style={{backgroundColor: '#2563eb', color: 'white', borderColor: '#2563eb'}}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 4v16m8-8H4" />
+                </svg>
+                Upload Document
+              </button>
+            )}
           </div>
         </div>
 
-        {/* TABS */}
         <div className="tabs-container">
-          <button 
-            className={`tab-btn ${activeTab === 'submissions' ? 'active-tab' : ''}`} 
-            onClick={() => setActiveTab('submissions')}
-          >
-            Submissions
+          <button className={`tab-btn ${activeTab === 'submissions' ? 'active-tab' : ''}`} onClick={() => setActiveTab('submissions')}>
+            {isTeacher ? "Submissions" : "My Work"}
           </button>
-          <button 
-            className={`tab-btn ${activeTab === 'students' ? 'active-tab' : ''}`} 
-            onClick={() => setActiveTab('students')}
-          >
-            Students
-          </button>
+          {isTeacher && (
+            <button className={`tab-btn ${activeTab === 'students' ? 'active-tab' : ''}`} onClick={() => setActiveTab('students')}>Students</button>
+          )}
         </div>
 
-        {/* SUBMISSIONS TABLE */}
+        {/* Submissions Content */}
         {activeTab === 'submissions' && (
           <div className="table-container">
             {submissions.length === 0 ? (
               <div className="empty-state">
-                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                </svg>
-                <p>No submissions found for this class.</p>
+                <p>No documents found.</p>
+                {!isTeacher && <button className="select-file-btn" onClick={() => setShowUploadModal(true)} style={{marginTop:'10px'}}>Upload your first document</button>}
               </div>
             ) : (
               <table className="submissions-table">
                 <thead>
                   <tr>
-                    <th>Student</th>
+                    {isTeacher && <th>Student</th>}
                     <th>Document</th>
                     <th>Date</th>
                     <th>Score</th>
@@ -202,51 +296,40 @@ export default function ClassroomDetails() {
                 <tbody>
                   {submissions.map((sub) => (
                     <tr key={sub.id}>
-                      <td className="student-name">{sub.studentName}</td>
-                      <td className="document-name">
-                        <button 
-                          className="document-link"
-                          onClick={() => handleOpenDocument(sub.driveFileId)}
-                          title="Open document in Google Drive"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                            <polyline points="10 9 9 9 8 9"/>
-                          </svg>
-                          {sub.filename}
-                        </button>
-                      </td>
+                      {isTeacher && <td className="student-name">{sub.studentName}</td>}
+                      <td><button className="document-link" onClick={() => handleOpenDocument(sub.driveFileId)}>{sub.filename}</button></td>
                       <td className="date">{sub.date}</td>
                       <td>
-                        {sub.score !== "-" ? (
-                          <span className={`score-badge ${sub.score > 75 ? 'high-score' : 'low-score'}`}>
-                            {sub.score}
-                          </span>
-                        ) : (
-                          <span className="no-score">-</span>
-                        )}
+                        {sub.score !== "-" ? <span className={`score-badge ${sub.score > 75 ? 'high-score' : 'low-score'}`}>{sub.score}</span> : <span className="no-score">-</span>}
                       </td>
                       <td>
-                        <span className="status-badge" style={getStatusStyle(sub.status)}>
-                          {sub.status}
+                        <span className="status-badge" style={getStatusStyle(sub.status, sub.isSubmitted)}>
+                          {sub.isSubmitted ? "SUBMITTED" : sub.status === 'COMPLETED' ? "EVALUATED" : "DRAFT"}
                         </span>
                       </td>
                       <td className="actions-cell">
-                        <button 
-                          className="action-btn view-btn" 
-                          onClick={() => handleViewReport(sub.id, sub.filename)}
-                        >
-                          View Report
-                        </button>
-                        <button 
-                          className="action-btn override-btn" 
-                          onClick={() => handleOverride(sub.id, sub.score)}
-                        >
-                          Override
-                        </button>
+                        {isTeacher && (
+                          <>
+                            <button className="action-btn view-btn" onClick={() => handleViewReport(sub.id, sub.filename)}>View Report</button>
+                            <button className="action-btn override-btn" onClick={() => handleOverride(sub.id, sub.score)}>Override</button>
+                          </>
+                        )}
+                        {!isTeacher && (
+                          <>
+                            {!sub.isSubmitted && (
+                              <button className="action-btn" onClick={() => handleAnalyze(sub.id)} disabled={processingId === sub.id} style={{backgroundColor: '#3b82f6', color: 'white', border: 'none', marginRight: '8px'}}>
+                                {processingId === sub.id ? '...' : sub.status === 'COMPLETED' ? 'Re-Analyze' : 'Analyze'}
+                              </button>
+                            )}
+                            {sub.status === 'COMPLETED' && (
+                              <button className="action-btn" onClick={() => handleViewReport(sub.id, sub.filename)} style={{marginRight: '8px'}}>View</button>
+                            )}
+                            {sub.status === 'COMPLETED' && !sub.isSubmitted && (
+                              <button className="action-btn" onClick={() => handleSubmit(sub.id)} disabled={processingId === sub.id} style={{backgroundColor: '#10b981', color: 'white', border: 'none'}}>Turn In</button>
+                            )}
+                            {sub.isSubmitted && <span style={{color: '#059669', fontSize: '0.85rem', fontWeight: '600'}}>Turned In</span>}
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -256,159 +339,116 @@ export default function ClassroomDetails() {
           </div>
         )}
 
-        {/* STUDENTS TAB */}
-        {activeTab === 'students' && (
-          <div className="empty-state">
-            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
-            </svg>
-            <p>Student Roster functionality coming soon.</p>
+        {/* Students Content (Teacher Only) */}
+        {activeTab === 'students' && isTeacher && (
+          <div className="table-container">
+            {students.length === 0 ? <div className="empty-state"><p>No students have joined this class yet.</p></div> : (
+              <table className="submissions-table">
+                <thead><tr><th>Student Name</th><th>Email</th><th>Action</th></tr></thead>
+                <tbody>
+                  {students.map((s) => (
+                    <tr key={s.id}><td className="student-name">{s.name}</td><td>{s.email}</td><td><button className="action-btn" style={{border:'1px solid #ef4444', color: '#ef4444', opacity: 0.5}} disabled>Remove</button></td></tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
 
       </div>
+      
+      {/* Upload Modal (New) */}
+      {showUploadModal && (
+        <div className="modal-overlay" onClick={() => setShowUploadModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '500px'}}>
+            <div className="modal-header">
+              <h2>Upload Document</h2>
+              <button className="modal-close" onClick={() => setShowUploadModal(false)}>×</button>
+            </div>
+            <div className="modal-body" style={{textAlign: 'center', padding: '2rem'}}>
+              {uploading ? <p>Uploading... Please wait.</p> : (
+                <div style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                  <label className="select-file-btn" style={{cursor:'pointer', display: 'block'}}>
+                    Choose Local File
+                    <input type="file" accept=".pdf,.docx,.txt" style={{display: 'none'}} onChange={handleFileUpload} />
+                  </label>
+                  <div style={{margin: '0.5rem 0', color: '#9ca3af'}}>OR</div>
+                  <button className="select-file-btn" style={{backgroundColor: '#fff', border: '1px solid #e5e7eb', color: '#374151'}} onClick={handleGoogleImport}>
+                    Import from Google Drive
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* MODAL COMPONENT */}
+      {/* Report Modal */}
       {showReportModal && (
         <div className="modal-overlay" onClick={() => setShowReportModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header">
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '1000px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column'}}>
+               <div className="modal-header">
                     <h2>Evaluation Report</h2>
-                    <button className="modal-close" onClick={() => setShowReportModal(false)}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M6 18L18 6M6 6l12 12"/>
-                      </svg>
-                    </button>
-                </div>
-                
-                <div className="modal-body">
-                    {modalLoading && (
-                      <div className="loading-state">
-                        <div className="spinner"></div>
-                        <p>Loading detailed report...</p>
-                      </div>
-                    )}
-                    
-                    {!modalLoading && reportData && reportData.error && (
-                        <div className="error-state">
-                          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="10"/>
-                            <line x1="12" y1="8" x2="12" y2="12"/>
-                            <line x1="12" y1="16" x2="12.01" y2="16"/>
-                          </svg>
-                          <p>Error: {reportData.message}</p>
-                          <p className="error-hint">Make sure the document has been evaluated by the AI.</p>
-                        </div>
-                    )}
-
-                    {!modalLoading && reportData && !reportData.error && (
-                        <div className="report-content">
-                            <div className="report-header-section">
-                              <h3 className="report-filename">{reportData.filename}</h3>
-                              <div className="overall-score-display">
-                                <span className="score-label">Overall Score</span>
-                                <span className={`score-value ${reportData.overallScore >= 75 ? 'high' : 'low'}`}>
-                                  {reportData.overallScore}%
-                                </span>
-                              </div>
-                            </div>
-                            
-                            {reportData.overallFeedback && (
-                              <div className="feedback-section">
-                                <h4>Overall Feedback</h4>
-                                <p>{reportData.overallFeedback}</p>
-                              </div>
-                            )}
-                            
-                            {/* Display individual metric scores */}
-                            {(reportData.completenessScore !== null || reportData.clarityScore !== null || 
-                              reportData.consistencyScore !== null || reportData.verificationScore !== null) && (
-                              <div className="metrics-section">
-                                <h4>Evaluation Metrics</h4>
-                                <div className="metrics-grid">
-                                  {reportData.completenessScore !== null && (
-                                    <div className="metric-card">
-                                      <div className="metric-header">
-                                        <span className="metric-name">Completeness</span>
-                                        <span className={`metric-score ${reportData.completenessScore >= 75 ? 'high' : reportData.completenessScore >= 50 ? 'medium' : 'low'}`}>
-                                          {reportData.completenessScore}%
-                                        </span>
-                                      </div>
-                                      {reportData.completenessFeedback && (
-                                        <p className="metric-feedback">{reportData.completenessFeedback}</p>
-                                      )}
-                                    </div>
-                                  )}
-                                  
-                                  {reportData.clarityScore !== null && (
-                                    <div className="metric-card">
-                                      <div className="metric-header">
-                                        <span className="metric-name">Clarity</span>
-                                        <span className={`metric-score ${reportData.clarityScore >= 75 ? 'high' : reportData.clarityScore >= 50 ? 'medium' : 'low'}`}>
-                                          {reportData.clarityScore}%
-                                        </span>
-                                      </div>
-                                      {reportData.clarityFeedback && (
-                                        <p className="metric-feedback">{reportData.clarityFeedback}</p>
-                                      )}
-                                    </div>
-                                  )}
-                                  
-                                  {reportData.consistencyScore !== null && (
-                                    <div className="metric-card">
-                                      <div className="metric-header">
-                                        <span className="metric-name">Consistency</span>
-                                        <span className={`metric-score ${reportData.consistencyScore >= 75 ? 'high' : reportData.consistencyScore >= 50 ? 'medium' : 'low'}`}>
-                                          {reportData.consistencyScore}%
-                                        </span>
-                                      </div>
-                                      {reportData.consistencyFeedback && (
-                                        <p className="metric-feedback">{reportData.consistencyFeedback}</p>
-                                      )}
-                                    </div>
-                                  )}
-                                  
-                                  {reportData.verificationScore !== null && (
-                                    <div className="metric-card">
-                                      <div className="metric-header">
-                                        <span className="metric-name">Verification</span>
-                                        <span className={`metric-score ${reportData.verificationScore >= 75 ? 'high' : reportData.verificationScore >= 50 ? 'medium' : 'low'}`}>
-                                          {reportData.verificationScore}%
-                                        </span>
-                                      </div>
-                                      {reportData.verificationFeedback && (
-                                        <p className="metric-feedback">{reportData.verificationFeedback}</p>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                            
-                            <div className="report-footer">
-                              <div className="footer-item">
-                                <span className="footer-label">Evaluation ID:</span>
-                                <span className="footer-value">{reportData.id}</span>
-                              </div>
-                              {reportData.createdAt && (
-                                <div className="footer-item">
-                                  <span className="footer-label">Evaluated:</span>
-                                  <span className="footer-value">{new Date(reportData.createdAt).toLocaleString()}</span>
-                                </div>
-                              )}
-                              {reportData.documentId && (
-                                <div className="footer-item">
-                                  <span className="footer-label">Document ID:</span>
-                                  <span className="footer-value">{reportData.documentId}</span>
-                                </div>
-                              )}
-                            </div>
-                        </div>
-                    )}
-                </div>
+                    <button className="modal-close" onClick={() => setShowReportModal(false)}>×</button>
+               </div>
+               <div className="modal-body" style={{overflowY: 'auto', padding: '2rem'}}>
+                  {modalLoading ? <div className="loading-state"><div className="spinner"></div><p>Loading report...</p></div> : 
+                   reportData && reportData.error ? <div className="error-state"><p>{reportData.message}</p></div> : 
+                   (
+                     <div className="report-content">
+                       <h3>{reportData?.filename}</h3>
+                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
+                          <ScoreBadge label="Overall" score={reportData.overallScore} isPrimary={true} />
+                          <ScoreBadge label="Completeness" score={reportData.completenessScore} />
+                          <ScoreBadge label="Clarity" score={reportData.clarityScore} />
+                          <ScoreBadge label="Consistency" score={reportData.consistencyScore} />
+                          <ScoreBadge label="Verification" score={reportData.verificationScore} />
+                       </div>
+                       <div style={{ backgroundColor: '#eff6ff', padding: '1.5rem', borderRadius: '8px', marginBottom: '2rem' }}>
+                          <h4>Overall Assessment</h4>
+                          <p>{reportData.overallFeedback}</p>
+                       </div>
+                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                          <FeedbackCard title="Completeness" score={reportData.completenessScore} feedback={reportData.completenessFeedback} color="#8b5cf6" />
+                          <FeedbackCard title="Clarity" score={reportData.clarityScore} feedback={reportData.clarityFeedback} color="#06b6d4" />
+                          <FeedbackCard title="Consistency" score={reportData.consistencyScore} feedback={reportData.consistencyFeedback} color="#10b981" />
+                          <FeedbackCard title="Verification" score={reportData.verificationScore} feedback={reportData.verificationFeedback} color="#f59e0b" />
+                       </div>
+                     </div>
+                   )
+                  }
+               </div>
             </div>
         </div>
       )}
     </>
   );
 }
+
+// ... (ScoreBadge and FeedbackCard - KEEP SAME AS PREVIOUS)
+const ScoreBadge = ({ label, score, isPrimary }) => {
+  const getScoreColor = (score) => {
+    if (score >= 85) return '#10b981';
+    if (score >= 70) return '#f59e0b';
+    return '#ef4444';
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: isPrimary ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' : '#ffffff', padding: '1.25rem', borderRadius: '10px', border: isPrimary ? 'none' : '2px solid #e2e8f0', minWidth: '100px', flex: 1 }}>
+      <span style={{ fontSize: '24px', fontWeight: 'bold', color: isPrimary ? '#ffffff' : getScoreColor(score) }}>{score}</span>
+      <span style={{ fontSize: '0.7rem', color: isPrimary ? '#dbeafe' : '#64748b', textTransform: 'uppercase', fontWeight: '600' }}>{label}</span>
+    </div>
+  );
+};
+
+const FeedbackCard = ({ title, score, feedback, color }) => (
+  <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1.25rem', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', backgroundColor: color }}></div>
+    <div style={{ paddingLeft: '0.75rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+        <h4 style={{ margin: 0 }}>{title}</h4>
+        <span style={{ fontWeight: 'bold', color: color }}>{score}%</span>
+      </div>
+      <p style={{ margin: 0, fontSize: '0.9rem', color: '#475569' }}>{feedback}</p>
+    </div>
+  </div>
+);

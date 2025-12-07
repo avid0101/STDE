@@ -10,5 +10,10 @@ import java.util.UUID;
 @Repository
 public interface EvaluationRepository extends JpaRepository<Evaluation, UUID> {
     List<Evaluation> findByUserId(UUID userId);
+    
     Optional<Evaluation> findByDocumentId(UUID documentId);
+
+    void deleteByDocumentId(UUID documentId);
+
+    Optional<Evaluation> findTopByUserIdAndDocument_ContentHashOrderByCreatedAtDesc(UUID userId, String contentHash);
 }

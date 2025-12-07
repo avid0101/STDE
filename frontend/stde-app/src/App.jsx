@@ -5,7 +5,7 @@ import Register from "./pages/Register";
 import Login from "./pages/Login";
 import TeacherLogin from "./pages/TeacherLogin";
 import TeacherRegister from "./pages/TeacherRegister";
-import AIEvaluate from "./pages/AIEvaluate";
+import StudentDashboard from "./pages/StudentDashboard"; 
 import Profile from "./pages/Profile";
 import TestEvaluation from "./pages/TestEvaluation";
 import Classroom from "./pages/Classroom";
@@ -37,10 +37,10 @@ export default function App() {
 
       {/* STUDENT PROTECTED ROUTES */}
       <Route
-        path="/ai-evaluate"
+        path="/student/dashboard" 
         element={
           <ProtectedRoute allowedRoles={["STUDENT"]}>
-            <AIEvaluate />
+            <StudentDashboard />
           </ProtectedRoute>
         }
       />
@@ -62,6 +62,13 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      
+      {/* Shared Classroom Details (Both Student & Teacher) */}
+      <Route 
+        path="/classroom/:id" 
+        element={
+        <ClassroomDetails />} 
+      />
 
       {/* TEACHER PROTECTED ROUTES */}
       <Route
@@ -80,10 +87,9 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route 
-        path="/classroom/:id" 
-        element={
-        <ClassroomDetails />} />
+
+      {/* Legacy Redirects */}
+      <Route path="/ai-evaluate" element={<Navigate to="/student/dashboard" replace />} />
 
       {/* Dev test page */}
       <Route path="/test-eval" element={<TestEvaluation />} />

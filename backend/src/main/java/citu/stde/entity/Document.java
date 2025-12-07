@@ -19,7 +19,7 @@ public class Document {
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "classroom_id") // This creates a foreign key column
+    @JoinColumn(name = "classroom_id")
     private Classroom classroom;
 
     @Column(nullable = false, length = 255)
@@ -31,18 +31,23 @@ public class Document {
     @Column(name = "file_size")
     private Long fileSize;
 
-    // Stores the unique ID returned by Google Drive API
     @Column(name = "drive_file_id", length = 255)
     private String driveFileId;
 
-    // Stores the link for the professor to view the file in Drive
     @Column(name = "drive_webview_link", length = 500)
     private String driveWebViewLink;
 
     private String storagePath; 
     
-    @Builder.Default // Good practice with Builder pattern
+    @Builder.Default
     private Boolean isCloudFile = false;
+
+    @Column(name = "content_hash", length = 64)
+    private String contentHash;
+
+    @Column(name = "is_submitted")
+    @Builder.Default
+    private Boolean isSubmitted = false;
 
     @Column(name = "upload_date", nullable = false)
     private Instant uploadDate;
@@ -58,6 +63,9 @@ public class Document {
         }
         if (status == null) {
             status = DocumentStatus.UPLOADED;
+        }
+        if (isSubmitted == null) {
+            isSubmitted = false;
         }
     }
 }

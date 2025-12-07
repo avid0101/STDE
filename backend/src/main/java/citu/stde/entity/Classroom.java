@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.util.UUID;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "classrooms")
@@ -32,4 +34,13 @@ public class Classroom {
     @Column(name = "created_at")
     @Builder.Default
     private Instant createdAt = Instant.now();
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "student_enrollments",
+        joinColumns = @JoinColumn(name = "classroom_id"),
+        inverseJoinColumns = @JoinColumn(name = "student_id")
+    )
+    @Builder.Default
+    private Set<User> students = new HashSet<>();
 }

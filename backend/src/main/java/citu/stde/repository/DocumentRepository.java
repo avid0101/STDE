@@ -26,6 +26,12 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     // Check if document exists by user ID and filename
     boolean existsByUserIdAndFilename(UUID userId, String filename);
     
-    //Find documents by Classroom ID (for Teacher Dashboard)
+    // Find documents by Classroom ID (for Teacher Dashboard)
     List<Document> findByClassroomIdOrderByUploadDateDesc(UUID classroomId);
+
+    // Find documents by Classroom ID AND User ID (for Student View)
+    List<Document> findByClassroomIdAndUserIdOrderByUploadDateDesc(UUID classroomId, UUID userId);
+
+    // For Teachers -> Only show submitted work
+    List<Document> findByClassroomIdAndIsSubmittedTrueOrderByUploadDateDesc(UUID classroomId);
 }

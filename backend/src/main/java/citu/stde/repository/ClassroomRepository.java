@@ -17,4 +17,7 @@ public interface ClassroomRepository extends JpaRepository<Classroom, UUID> {
 
     // Finds a classroom only if the ID and the Teacher ID match.
     Optional<Classroom> findByIdAndTeacherId(UUID id, UUID teacherId);
+
+    // Find all classes a student is enrolled in
+    List<Classroom> findByStudents_Id(UUID studentId);
 }

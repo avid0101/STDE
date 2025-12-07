@@ -46,22 +46,47 @@ public class DocumentService {
     private final EvaluationRepository evaluationRepository; 
     private final OAuth2AuthorizedClientService clientService; 
 
-    // Maximum file size: 10MB
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-    private static final List<String> ALLOWED_FILE_TYPES = List.of(
-            "application/pdf",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
-            "text/plain"
-    );
-
-    // Get all documents for a specific class
+    // Get documents for a specific class (Teacher view)
+    // Only return SUBMITTED documents
     @Transactional(readOnly = true)
     public List<DocumentDTO> getDocumentsByClass(UUID classroomId) {
-        return documentRepository.findByClassroomIdOrderByUploadDateDesc(classroomId)
+        return documentRepository.findByClassroomIdAndIsSubmittedTrueOrderByUploadDateDesc(classroomId)
                 .stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
+    }
+
+    // Get documents for a specific student in a class (Student view)
+    @Transactional(readOnly = true)
+    public List<DocumentDTO> getDocumentsByClassAndStudent(UUID classroomId, UUID studentId) {
+        return documentRepository.findByClassroomIdAndUserIdOrderByUploadDateDesc(classroomId, studentId)
+                .stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
+    // Submit Document Action
+    @Transactional
+    public DocumentDTO submitDocument(UUID documentId, UUID userId) {
+        Document doc = documentRepository.findById(documentId)
+            .orElseThrow(() -> new IllegalArgumentException("Document not found"));
+
+        if (!doc.getUser().getId().equals(userId)) {
+            throw new SecurityException("Unauthorized access to document");
+        }
+
+        if (Boolean.TRUE.equals(doc.getIsSubmitted())) {
+            throw new IllegalArgumentException("Document is already submitted.");
+        }
+
+        // Optional: Ensure it has been evaluated first?
+        // if (doc.getStatus() != DocumentStatus.COMPLETED) { ... }
+
+        doc.setIsSubmitted(true);
+        Document saved = documentRepository.save(doc);
+        return convertToDTO(saved);
     }
 
     public DocumentDTO uploadDocument(MultipartFile file, UUID userId, UUID classId) throws IOException {
@@ -71,11 +96,13 @@ public class DocumentService {
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         String destinationFolderId = null;
-        Classroom classroom = null; // Hold reference to set relationship
+        Classroom classroom = null;
 
         if (classId != null) {
             classroom = classroomRepository.findById(classId)
                     .orElseThrow(() -> new IllegalArgumentException("Classroom not found"));
+            // Note: Currently still uploading to teacher folder. 
+            // In a future "Idea 2" update, this would go to student's draft folder.
             destinationFolderId = classroom.getDriveFolderId(); 
         }
 
@@ -92,6 +119,7 @@ public class DocumentService {
                 .uploadDate(Instant.now())
                 .status(DocumentStatus.UPLOADED)
                 .isCloudFile(false)
+                .isSubmitted(false) // Default to Draft
                 .build();
 
         Document savedDocument = documentRepository.save(document);
@@ -114,6 +142,11 @@ public class DocumentService {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found"));
         if (!document.getUser().getId().equals(userId)) throw new IllegalArgumentException("Access denied");
+        
+        // Block deletion if submitted
+        if (Boolean.TRUE.equals(document.getIsSubmitted())) {
+            throw new IllegalArgumentException("Cannot delete a submitted document.");
+        }
         
         try {
             if (document.getDriveFileId() != null) {
@@ -163,6 +196,7 @@ public class DocumentService {
         doc.setClassroom(classroom); 
         doc.setStatus(DocumentStatus.UPLOADED);
         doc.setIsCloudFile(true); 
+        doc.setIsSubmitted(false);
 
         return documentRepository.save(doc);
     }
@@ -190,14 +224,11 @@ public class DocumentService {
     }
 
     private DocumentDTO convertToDTO(Document document) {
-        
-        // 1. Get Student Name safely
         String studentName = "Unknown";
         if (document.getUser() != null) {
             studentName = document.getUser().getFirstname() + " " + document.getUser().getLastname();
         }
 
-        // 2. Get Score (if evaluated)
         Integer score = null;
         if (document.getStatus() == DocumentStatus.COMPLETED) {
             Optional<Evaluation> eval = evaluationRepository.findByDocumentId(document.getId());
@@ -217,6 +248,7 @@ public class DocumentService {
                 .overallScore(score)      
                 .driveFileId(document.getDriveFileId())
                 .classroomId(document.getClassroom() != null ? document.getClassroom().getId() : null)
+                .isSubmitted(document.getIsSubmitted())
                 .build();
     }
 }

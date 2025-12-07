@@ -20,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,27 +35,20 @@ public class EvaluationService {
     private final DocumentRepository documentRepository;
     private final EvaluationRepository evaluationRepository;
     private final GoogleDriveService googleDriveService;
-    private final ClassroomService classroomService; // ✅ Injected for security checks
+    private final ClassroomService classroomService; 
 
-    // Toggle for content truncation
     private final boolean ENABLE_TRUNCATION = false;
-
-    // Maximum file size (for context, though not used here directly)
-    // private static final long MAX_FILE_SIZE = 10 * 1024 * 1024; 
-
 
     @Transactional
     public EvaluationDTO evaluateDocument(UUID documentId, UUID userId) {
-        // 1. Fetch Document Metadata from DB
+        // 1. Fetch Document Metadata
         Document doc = documentRepository.findById(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("Document not found"));
         
-        // Ensure the user owns the document (only the student who uploaded can trigger evaluation)
         if (!doc.getUser().getId().equals(userId)) {
             throw new SecurityException("Unauthorized access to document");
         }
 
-        // Update status to processing
         doc.setStatus(DocumentStatus.PROCESSING);
         documentRepository.save(doc);
 
@@ -61,35 +56,58 @@ public class EvaluationService {
             // 2. Fetch File Content from Google Drive
             String fileContent = fetchFileContentFromDrive(doc);
 
-            // 3. Validate Document Type (AI-based detection)
-            String safeContent = truncateContent(fileContent);
-            if (!isValidSoftwareTestingDocument(safeContent)) {
-                throw new IllegalArgumentException("TYPE:INVALID_DOCUMENT|The uploaded document is not a Software Testing Document. Please upload a valid test plan, test case, or test strategy document.");
+            // Calculate Hash & Check for Duplicates (Strategy 1)
+            String currentHash = calculateHash(fileContent);
+            doc.setContentHash(currentHash);
+            documentRepository.save(doc); // Save hash immediately
+
+            // Check if this user has already analyzed this exact content
+            Optional<Evaluation> cachedEval = evaluationRepository
+                .findTopByUserIdAndDocument_ContentHashOrderByCreatedAtDesc(userId, currentHash);
+
+            if (cachedEval.isPresent()) {
+                System.out.println("Duplicate content detected. Returning cached result for doc ID: " + documentId);
+                return copyCachedEvaluation(cachedEval.get(), doc, userId);
             }
 
-            // 4. Handle Re-evaluation (Fixes "Duplicate Key" error)
+            // 3. Validate Document Type
+            String safeContent = truncateContent(fileContent);
+            if (!isValidSoftwareTestingDocument(safeContent)) {
+                throw new IllegalArgumentException("TYPE:INVALID_DOCUMENT|The uploaded document is not a Software Testing Document.");
+            }
+
+            // 4. Handle Re-evaluation (Cleanup old eval for THIS document ID)
             Optional<Evaluation> existingEval = evaluationRepository.findByDocumentId(documentId);
             if (existingEval.isPresent()) {
                 evaluationRepository.delete(existingEval.get());
                 evaluationRepository.flush();
             }
 
-            // 5. Perform AI Evaluation (ChatClient logic)
+            // 5. Perform AI Evaluation
             ChatClient chatClient = chatClientBuilder.build();
             
-            // NOTE: System prompt and AI response mapping logic remains the same as previously defined
             String systemPrompt = """
                 You are a strict QA Auditor. Evaluate the software test document on 4 criteria.
-                
                 You MUST return a valid JSON object. Do not add markdown blocks.
+                
                 Use EXACTLY these keys:
-                { /* ... JSON structure ... */ }
+                {
+                    "completenessScore": (Integer 0-100),
+                    "completenessFeedback": (String),
+                    "clarityScore": (Integer 0-100),
+                    "clarityFeedback": (String),
+                    "consistencyScore": (Integer 0-100),
+                    "consistencyFeedback": (String),
+                    "verificationScore": (Integer 0-100),
+                    "verificationFeedback": (String),
+                    "overallScore": (Integer 0-100),
+                    "overallFeedback": (String)
+                }
                 """;
 
             EvaluationResponse aiResponse = chatClient.prompt()
                     .system(systemPrompt)
-                    .user(u -> u.text("Document Content:\n{content}")
-                            .param("content", safeContent))
+                    .user(u -> u.text("Document Content:\n{content}").param("content", safeContent))
                     .call()
                     .entity(EvaluationResponse.class);
 
@@ -109,13 +127,13 @@ public class EvaluationService {
             doc.setStatus(DocumentStatus.FAILED);
             documentRepository.save(doc);
             
-            // ... (Error Classification Logic) ...
             String errorMsg = e.getMessage().toLowerCase();
-            if (errorMsg.contains("429") || errorMsg.contains("rate limit") || errorMsg.contains("quota")) {
-                throw new RuntimeException("TYPE:RATE_LIMIT|AI is currently busy (Rate Limit). Please wait 30 seconds.");
+            if (errorMsg.contains("429") || errorMsg.contains("rate limit")) {
+                throw new RuntimeException("TYPE:RATE_LIMIT|AI is busy. Please wait 30 seconds.");
             }
-            if (e instanceof DataIntegrityViolationException) {
-                throw new RuntimeException("TYPE:DUPLICATE|This document has already been evaluated.");
+            // Propagate custom exceptions (like INVALID_DOCUMENT) directly
+            if (e.getMessage().startsWith("TYPE:")) {
+                throw new RuntimeException(e.getMessage());
             }
             
             System.err.println("Backend Error: " + e.getMessage());
@@ -124,50 +142,76 @@ public class EvaluationService {
         }
     }
 
-    // ✅ NEW METHOD: Professor Override Score (Requirement 7.2.3)
+    // Helper to calculate SHA-256 Hash
+    private String calculateHash(String content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(content.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (Exception e) {
+            System.err.println("Hash calculation failed: " + e.getMessage());
+            return null; // Fail open (allow processing) if hash fails
+        }
+    }
+
+    // Create a new Evaluation entry from a Cached one (Cost: 0 Tokens)
+    private EvaluationDTO copyCachedEvaluation(Evaluation cached, Document currentDoc, UUID userId) {
+        Evaluation newEval = Evaluation.builder()
+                .document(currentDoc)
+                .userId(userId)
+                .completenessScore(cached.getCompletenessScore())
+                .completenessFeedback(cached.getCompletenessFeedback())
+                .clarityScore(cached.getClarityScore())
+                .clarityFeedback(cached.getClarityFeedback())
+                .consistencyScore(cached.getConsistencyScore())
+                .consistencyFeedback(cached.getConsistencyFeedback())
+                .verificationScore(cached.getVerificationScore())
+                .verificationFeedback(cached.getVerificationFeedback())
+                .overallScore(cached.getOverallScore())
+                .overallFeedback(cached.getOverallFeedback() + " (Note: Result retrieved from cache as content is identical to previous submission.)")
+                .build();
+
+        Evaluation saved = evaluationRepository.save(newEval);
+        
+        currentDoc.setStatus(DocumentStatus.COMPLETED);
+        documentRepository.save(currentDoc);
+
+        return mapToDTO(saved, currentDoc.getFilename());
+    }
+
     @Transactional
     public EvaluationDTO overrideEvaluationScore(UUID documentId, UUID teacherId, Integer newScore) {
         if (newScore == null || newScore < 0 || newScore > 100) {
             throw new IllegalArgumentException("Score must be between 0 and 100.");
         }
 
-        // 1. Fetch the Document
         Document doc = documentRepository.findById(documentId)
             .orElseThrow(() -> new IllegalArgumentException("Document not found."));
 
-        // 2. SECURITY CHECK: Verify teacher owns the class linked to the document
         UUID classId = doc.getClassroom() != null ? doc.getClassroom().getId() : null;
         if (classId == null) {
-             // Block override if document is not in a class, forcing the teacher to link it first
              throw new SecurityException("Security check failed: Document is not linked to any class.");
         }
-        // This throws a SecurityException if the teacher doesn't own the class.
         classroomService.verifyClassroomOwnership(classId, teacherId);
 
-        // 3. Find existing Evaluation or create a new one if score is being applied manually
-        // Note: We use orElseGet so we don't throw an error if the document hasn't been AI-evaluated yet.
         Evaluation eval = evaluationRepository.findByDocumentId(documentId)
             .orElseGet(() -> Evaluation.builder().document(doc).userId(doc.getUser().getId()).build());
 
-        // 4. Update the scores (Override)
         eval.setOverallScore(newScore);
-        eval.setCompletenessScore(newScore); // Set sub-scores for consistency in DTO display
+        eval.setCompletenessScore(newScore);
         eval.setClarityScore(newScore);
         eval.setConsistencyScore(newScore);
         eval.setVerificationScore(newScore);
         eval.setOverallFeedback("Score manually overridden by Professor.");
         
-        // 5. Save the updated Evaluation
         Evaluation savedEval = evaluationRepository.save(eval);
 
-        // 6. Update Document status
         doc.setStatus(DocumentStatus.COMPLETED); 
         documentRepository.save(doc);
 
         return mapToDTO(savedEval, doc.getFilename());
     }
 
-    // ✅ UPDATED SECURITY: Allow Teacher to view report (Requirement 7.2.2)
     public EvaluationDTO getEvaluationByDocumentId(UUID documentId, UUID userId) {
         Evaluation eval = evaluationRepository.findByDocumentId(documentId)
                 .orElseThrow(() -> new IllegalArgumentException("Evaluation report not found."));
@@ -175,21 +219,18 @@ public class EvaluationService {
         Document doc = eval.getDocument();
         UUID classId = doc.getClassroom() != null ? doc.getClassroom().getId() : null;
 
-        // Security Check Logic: 
         boolean isOwner = doc.getUser().getId().equals(userId);
         boolean isTeacherOfClass = false;
         
         if (classId != null) {
             try {
-                // Check if the user is the teacher of the class
                 classroomService.verifyClassroomOwnership(classId, userId);
                 isTeacherOfClass = true;
             } catch (SecurityException e) {
-                // User is not the owner/teacher of this class
+                // Not the teacher
             }
         }
         
-        // Only allow access if the user is the original owner (student) OR the class teacher
         if (!isOwner && !isTeacherOfClass) {
             throw new SecurityException("Unauthorized: User is neither the document owner nor the class teacher.");
         }
@@ -198,7 +239,7 @@ public class EvaluationService {
     }
     
     // ====================================================================================
-    // | PRIVATE HELPER METHODS (Extraction, DTO Mapping, Validation)
+    // | PRIVATE HELPER METHODS
     // ====================================================================================
 
     private String fetchFileContentFromDrive(Document doc) throws IOException {
