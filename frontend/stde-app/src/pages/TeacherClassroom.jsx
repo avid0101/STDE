@@ -1,11 +1,11 @@
-// src/pages/TeacherClassroom.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+
 import Sidebar from "../components/Sidebar";
+import classroomService from "../services/classroomService";
 import "../css/TeacherClassroom.css";
 
 console.log("TeacherClassroom loaded");
-
 
 export default function TeacherClassroom() {
   const navigate = useNavigate();
@@ -13,55 +13,64 @@ export default function TeacherClassroom() {
   const [newClassroom, setNewClassroom] = useState({
     name: "",
     code: "",
-    section: "",
-    level: ""
+    section: ""
   });
 
-  // Sample classroom data
-  const [classrooms, setClassrooms] = useState([
-    {
-      id: 1,
-      name: "Software Testing 101",
-      code: "CS401-2025",
-      section: "Section A",
-      students: 45,
-      active: 2,
-      color: "#3b82f6"
-    },
-    {
-      id: 2,
-      name: "Quality Assurance",
-      code: "CS402-2025",
-      section: "Section B",
-      students: 38,
-      active: 1,
-      color: "#a855f7"
-    },
-    {
-      id: 3,
-      name: "Advanced Testing Techniques",
-      code: "CS501-2025",
-      section: "Graduate",
-      students: 25,
-      active: 3,
-      color: "#10b981"
-    }
-  ]);
+  const [classrooms, setClassrooms] = useState([]); 
+  const [loading, setLoading] = useState(true);
 
-  const handleCreateClassroom = (e) => {
+  // Load classes on mount
+  useEffect(() => {
+    loadClassrooms();
+  }, []);
+
+  const loadClassrooms = async () => {
+    try {
+      const data = await classroomService.getAllClassrooms();
+      
+      // Process data to add UI-specific properties (Color, Stats) 
+      // since these aren't stored in the DB yet
+      const processedData = data.map(cls => ({
+        ...cls,
+        color: `#${Math.floor(Math.random()*16777215).toString(16)}`, // Random color generator
+        students: 0, // Placeholder
+        active: 0    // Placeholder
+      }));
+
+      setClassrooms(processedData);
+    } catch (error) {
+      console.error("Failed to load classes", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateClassroom = async (e) => {
     e.preventDefault();
-    const newClass = {
-      id: classrooms.length + 1,
-      name: newClassroom.name,
-      code: newClassroom.code,
-      section: newClassroom.section,
-      students: 0,
-      active: 0,
-      color: `#${Math.floor(Math.random()*16777215).toString(16)}`
-    };
-    setClassrooms([...classrooms, newClass]);
-    setShowCreateModal(false);
-    setNewClassroom({ name: "", code: "", section: "", level: "" });
+    try {
+      // Call the API with the MANUAL Class Code
+      const createdClass = await classroomService.createClassroom({
+        name: newClassroom.name,
+        section: newClassroom.section,
+        classCode: newClassroom.code // <--- Sending the manual code
+      });
+
+      // Add UI properties to the new class so it displays immediately
+      const classWithUI = {
+        ...createdClass,
+        students: 0,
+        active: 0,
+        color: `#${Math.floor(Math.random()*16777215).toString(16)}`
+      };
+
+      // Update UI with real data
+      setClassrooms([...classrooms, classWithUI]); 
+      setShowCreateModal(false);
+      setNewClassroom({ name: "", code: "", section: ""});
+      alert(`Class created! Drive Folder ID: ${createdClass.driveFolderId}`);
+    } catch (err) {
+      alert("Error creating class: " + err);
+    }
   };
 
   const handleClassroomClick = (id) => {
@@ -103,7 +112,8 @@ export default function TeacherClassroom() {
               </div>
               <div className="classroom-card-body">
                 <h3 className="classroom-name">{classroom.name}</h3>
-                <p className="classroom-code">{classroom.code} • {classroom.section}</p>
+                {/* Updated to use 'classCode' from backend entity */}
+                <p className="classroom-code">{classroom.classCode} • {classroom.section}</p>
                 <div className="classroom-stats">
                   <div className="stat-item">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -148,6 +158,8 @@ export default function TeacherClassroom() {
                     required
                   />
                 </div>
+                
+                {/* Manual Class Code Input */}
                 <div className="form-group">
                   <label>Course Code</label>
                   <input
@@ -158,6 +170,7 @@ export default function TeacherClassroom() {
                     required
                   />
                 </div>
+
                 <div className="form-group">
                   <label>Section</label>
                   <input
@@ -167,19 +180,6 @@ export default function TeacherClassroom() {
                     onChange={(e) => setNewClassroom({...newClassroom, section: e.target.value})}
                     required
                   />
-                </div>
-                <div className="form-group">
-                  <label>Level</label>
-                  <select
-                    value={newClassroom.level}
-                    onChange={(e) => setNewClassroom({...newClassroom, level: e.target.value})}
-                    required
-                  >
-                    <option value="">Select level</option>
-                    <option value="undergraduate">Undergraduate</option>
-                    <option value="graduate">Graduate</option>
-                    <option value="doctoral">Doctoral</option>
-                  </select>
                 </div>
                 <div className="modal-actions">
                   <button 

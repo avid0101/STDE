@@ -14,8 +14,9 @@ public class Document {
     @GeneratedValue
     private UUID id;
 
-    @Column(name = "user_id", nullable = false)
-    private UUID userId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
 
     @Column(nullable = false, length = 255)
     private String filename;
@@ -26,8 +27,18 @@ public class Document {
     @Column(name = "file_size")
     private Long fileSize;
 
-    @Column(columnDefinition = "TEXT")
-    private String content;
+    // Stores the unique ID returned by Google Drive API
+    @Column(name = "drive_file_id", length = 255)
+    private String driveFileId;
+
+    // Stores the link for the professor to view the file in Drive
+    @Column(name = "drive_webview_link", length = 500)
+    private String driveWebViewLink;
+
+    private String storagePath; 
+    
+    @Builder.Default // Good practice with Builder pattern
+    private Boolean isCloudFile = false;
 
     @Column(name = "upload_date", nullable = false)
     private Instant uploadDate;

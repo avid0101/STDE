@@ -3,8 +3,8 @@ import authService from './authService';
 const API_URL = 'http://localhost:8080/api/documents';
 
 const documentService = {
-  // Upload a document
-  uploadDocument: async (file) => {
+  // 1. Upload from Local Computer (Multipart File)
+  uploadDocument: async (file, classId = null) => {
     const token = authService.getToken();
     
     if (!token) {
@@ -14,10 +14,16 @@ const documentService = {
     const formData = new FormData();
     formData.append('file', file);
 
+    // Only append if a class was selected
+    if (classId) {
+      formData.append('classId', classId);
+    }
+
     const response = await fetch(`${API_URL}/upload`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`
+        // No Content-Type header needed for FormData; browser sets it automatically
       },
       body: formData
     });
@@ -26,6 +32,35 @@ const documentService = {
 
     if (!response.ok) {
       throw new Error(data.error || 'Failed to upload document');
+    }
+
+    return data;
+  },
+
+  // 2. NEW: Import from Google Drive (Sends IDs only)
+  uploadDriveFile: async (fileId, classId = null) => {
+    const token = authService.getToken();
+    
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    const response = await fetch(`${API_URL}/upload-drive`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json' // Important: We are sending JSON now
+      },
+      body: JSON.stringify({ 
+        fileId: fileId,
+        classId: classId 
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to import Drive document');
     }
 
     return data;
