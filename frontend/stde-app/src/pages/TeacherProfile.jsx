@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import authService from '../services/authService';
+import api from '../services/api';
 import '../css/Profile.css';
 
 export default function TeacherProfile() {
@@ -12,33 +13,109 @@ export default function TeacherProfile() {
     totalStudents: 0,
     activeClassrooms: 0
   });
+  
+  // Edit State
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState({ firstname: "", lastname: "" });
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    // Get user data from localStorage
     const userData = authService.getCurrentUser();
     if (userData) {
       setUser(userData);
-      // TODO: Fetch teacher stats from API
-      fetchTeacherStats(userData.id);
+      setFormData({ firstname: userData.firstname, lastname: userData.lastname });
+      fetchTeacherStats();
+    } else {
+        setLoading(false);
     }
-    setLoading(false);
+
+    // ✅ LISTENER: Waits for the popup to say "Success!"
+    const handleMessage = async (event) => {
+      // Security Check
+      if (event.origin !== window.location.origin) return;
+
+      if (event.data.type === 'GOOGLE_LINK_SUCCESS') {
+        const { token: googleToken, user: googleUser } = event.data;
+        
+        // 1. Capture the "Professional Name" from the current local session
+        const localUser = authService.getCurrentUser();
+        const professionalName = {
+            firstname: localUser.firstname,
+            lastname: localUser.lastname
+        };
+
+        try {
+          // 2. Switch the browser session to the Google Account
+          localStorage.setItem('token', googleToken);
+
+          // 3. IMMEDIATELY update the Google Account's name to match the Professional Name
+          const updatedUser = await authService.updateProfile(professionalName);
+
+          // 4. Preserve the Avatar (if local didn't have one, use Google's)
+          if (!updatedUser.avatarUrl && googleUser.avatarUrl) {
+             updatedUser.avatarUrl = googleUser.avatarUrl;
+          }
+
+          // 5. Finalize the Session
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+          setUser(updatedUser);
+          
+          alert(`Google Drive connected! You are now using ${updatedUser.email} for storage, but appearing as "${updatedUser.firstname} ${updatedUser.lastname}".`);
+          
+        } catch (error) {
+          console.error("Linking failed", error);
+          // Revert to local if anything breaks
+          localStorage.setItem('token', authService.getToken()); 
+          alert("Failed to sync identity with Google account.");
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  const fetchTeacherStats = async (teacherId) => {
+  const fetchTeacherStats = async () => {
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch(`/api/teachers/${teacherId}/stats`);
-      // const data = await response.json();
-      
-      // Mock data for now
+      const response = await api.get('/dashboard/teacher');
       setStats({
-        totalClassrooms: 3,
-        totalStudents: 45,
-        activeClassrooms: 2
+        totalClassrooms: response.data.totalClasses || 0,
+        totalStudents: response.data.totalStudents || 0,
+        activeClassrooms: response.data.totalClasses || 0 
       });
     } catch (error) {
       console.error('Error fetching teacher stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ NEW: Open the Google Login Popup (Teacher Endpoint)
+  const handleConnectGoogle = () => {
+    const width = 500;
+    const height = 600;
+    const left = (window.screen.width / 2) - (width / 2);
+    const top = (window.screen.height / 2) - (height / 2);
+    
+    window.open(
+      'http://localhost:8080/api/oauth2/login/teacher', 
+      'Connect Google Drive', 
+      `width=${width},height=${height},top=${top},left=${left}`
+    );
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const updatedUser = await authService.updateProfile(formData);
+      setUser(updatedUser);
+      setIsEditing(false);
+      alert("Profile updated successfully!");
+    } catch (error) {
+      alert("Failed to update profile: " + error);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -51,9 +128,7 @@ export default function TeacherProfile() {
     return (
       <div className="ai-evaluate-container">
         <Sidebar />
-        <div className="main-content">
-          <div className="loading">Loading...</div>
-        </div>
+        <div className="main-content"><div className="loading">Loading...</div></div>
       </div>
     );
   }
@@ -73,46 +148,18 @@ export default function TeacherProfile() {
         </div>
 
         {/* Stats Cards */}
-        <div className="stats-grid" style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-          gap: '1.5rem',
-          marginBottom: '2rem'
-        }}>
-          <div className="stat-card" style={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            padding: '1.5rem',
-            borderRadius: '12px',
-            color: 'white'
-          }}>
+        <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', marginBottom: '2rem'}}>
+          <div className="stat-card" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '1.5rem', borderRadius: '12px', color: 'white' }}>
             <div style={{ fontSize: '2rem', fontWeight: 'bold' }}>{stats.totalClassrooms}</div>
             <div style={{ opacity: 0.9, marginTop: '0.5rem' }}>Total Classrooms</div>
           </div>
-
-          <div className="stat-card" style={{
-            background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-            padding: '1.5rem',
-            borderRadius: '12px',
-            color: 'white'
-          }}>
+          <div className="stat-card" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', padding: '1.5rem', borderRadius: '12px', color: 'white' }}>
             <div style={{ fontSize: '2rem', fontWeight: 'bold' }}>{stats.totalStudents}</div>
             <div style={{ opacity: 0.9, marginTop: '0.5rem' }}>Total Students</div>
           </div>
-
-          <div className="stat-card" style={{
-            background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-            padding: '1.5rem',
-            borderRadius: '12px',
-            color: 'white'
-          }}>
-            <div style={{ fontSize: '2rem', fontWeight: 'bold' }}>{stats.activeClassrooms}</div>
-            <div style={{ opacity: 0.9, marginTop: '0.5rem' }}>Active Classrooms</div>
-          </div>
         </div>
 
-        {/* Profile Card */}
         <div className="profile-card">
-          {/* Avatar Section */}
           <div className="profile-header">
             <div className="avatar-section">
               <div className="avatar-large">
@@ -126,43 +173,112 @@ export default function TeacherProfile() {
               </div>
               <div className="user-info">
                 <h2 className="user-name">{user.firstname} {user.lastname}</h2>
-                <p className="user-role">
-                  <svg width="16" height="16" fill="currentColor" style={{ marginRight: '0.5rem', display: 'inline' }}>
-                    <path d="M12 14l9-5-9-5-9 5 9 5z"/>
-                    <path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/>
-                  </svg>
-                  Teacher
-                </p>
+                <p className="user-role">Teacher</p>
               </div>
             </div>
+
+            {/* ✅ NEW: CONNECT BUTTON */}
+            <button 
+                onClick={handleConnectGoogle}
+                className="connect-drive-btn"
+                style={{
+                    padding: '0.6rem 1rem',
+                    backgroundColor: '#fff',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    color: '#374151',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginTop: '10px',
+                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+                }}
+            >
+                <svg width="18" height="18" viewBox="0 0 87.3 78">
+                    <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                    <path d="M43.65 25l13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2l13.75 23.8z" fill="#00ac47"/>
+                    <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l3.85-6.65c.8-1.4 1.2-2.95 1.2-4.5h-27.5l13.75 23.8z" fill="#ea4335"/>
+                    <path d="M43.65 25L29.9 1.2c-1.35.8-2.5 1.9-3.3 3.3l-26.6 46.1c-.8 1.35-1.2 2.9-1.2 4.5h27.5L43.65 25z" fill="#00832d"/>
+                    <path d="M59.7 53.05h27.5c0-1.55-.4-3.1-1.2-4.5L59.4 2.45c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25l16.05 28.05z" fill="#2684fc"/>
+                    <path d="M73.4 76.8L59.7 53.05H27.5l13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h18.5c1.6 0 3.15-.45 4.5-1.2z" fill="#ffba00"/>
+                </svg>
+                Connect Google Drive
+            </button>
           </div>
 
-          {/* Information Section */}
           <div className="profile-body">
-            <h3 className="section-title">Account Information</h3>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.5rem', borderBottom:'2px solid #f3f4f6', paddingBottom:'0.75rem'}}>
+              <h3 className="section-title" style={{border:'none', margin:0, padding:0}}>Account Information</h3>
+              
+              {!isEditing ? (
+                <button 
+                  onClick={() => setIsEditing(true)}
+                  style={{padding:'0.5rem 1rem', background:'#2563eb', color:'white', border:'none', borderRadius:'6px', cursor:'pointer', fontWeight:'500'}}
+                >
+                  Edit Profile
+                </button>
+              ) : (
+                <div style={{display:'flex', gap:'0.5rem'}}>
+                  <button 
+                    onClick={() => setIsEditing(false)}
+                    style={{padding:'0.5rem 1rem', background:'#e5e7eb', color:'#374151', border:'none', borderRadius:'6px', cursor:'pointer', fontWeight:'500'}}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleSave}
+                    style={{padding:'0.5rem 1rem', background:'#10b981', color:'white', border:'none', borderRadius:'6px', cursor:'pointer', fontWeight:'500'}}
+                    disabled={saving}
+                  >
+                    {saving ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              )}
+            </div>
             
             <div className="info-grid">
               <div className="info-item">
                 <label className="info-label">First Name</label>
-                <div className="info-value">{user.firstname}</div>
+                {isEditing ? (
+                  <input 
+                    type="text" 
+                    value={formData.firstname}
+                    onChange={(e) => setFormData({...formData, firstname: e.target.value})}
+                    style={{padding:'0.75rem', borderRadius:'0.5rem', border:'1px solid #d1d5db', fontSize:'1rem'}}
+                  />
+                ) : (
+                  <div className="info-value">{user.firstname}</div>
+                )}
               </div>
 
               <div className="info-item">
                 <label className="info-label">Last Name</label>
-                <div className="info-value">{user.lastname}</div>
+                {isEditing ? (
+                  <input 
+                    type="text" 
+                    value={formData.lastname}
+                    onChange={(e) => setFormData({...formData, lastname: e.target.value})}
+                    style={{padding:'0.75rem', borderRadius:'0.5rem', border:'1px solid #d1d5db', fontSize:'1rem'}}
+                  />
+                ) : (
+                  <div className="info-value">{user.lastname}</div>
+                )}
               </div>
 
               <div className="info-item">
                 <label className="info-label">Email Address</label>
-                <div className="info-value">{user.email}</div>
+                <div className="info-value" style={{backgroundColor: isEditing ? '#f3f4f6' : '#f9fafb', color: isEditing ? '#9ca3af' : 'inherit'}}>
+                  {user.email} {isEditing && <span style={{fontSize:'0.75rem'}}>(Cannot be changed)</span>}
+                </div>
               </div>
 
               <div className="info-item">
                 <label className="info-label">Account Type</label>
                 <div className="info-value">
-                  <span className="badge badge-green">
-                    TEACHER
-                  </span>
+                  <span className="badge badge-green">TEACHER</span>
                 </div>
               </div>
 
@@ -173,7 +289,6 @@ export default function TeacherProfile() {
             </div>
           </div>
 
-          {/* Actions Section */}
           <div className="profile-footer">
             <button className="logout-btn" onClick={handleLogout}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">

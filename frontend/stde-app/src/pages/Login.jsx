@@ -128,8 +128,8 @@ export default function Login() {
               />
             </div>
 
+            {/* ✅ UPDATED FORM GROUP WITH FORGOT PASSWORD LINK */}
             <div className="form-group">
-              <label>Password</label>
               <div className="password-input">
                 <input
                   type={showPassword ? "text" : "password"}
@@ -149,6 +149,12 @@ export default function Login() {
                   {showPassword ? "Hide" : "Show"}
                 </button>
               </div>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                <label>Password</label>
+                <Link to="/forgot-password" style={{fontSize: '0.85rem', color: '#2563eb', textDecoration: 'none'}}>
+                  Forgot Password?
+                </Link>
+              </div>
             </div>
 
             <button
@@ -163,10 +169,10 @@ export default function Login() {
               margin: '1.5rem 0 1rem', 
               textAlign: 'center', 
               color: '#9ca3af',
-              fontSize: '0.875rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem'
+              fontSize: '0.875rem', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.75rem' 
             }}>
               <div style={{ flex: 1, height: '1px', background: '#e5e7eb' }}></div>
               <span>OR</span>

@@ -15,25 +15,45 @@ export default function OAuthCallback() {
     const avatarUrl = searchParams.get('avatarUrl');
 
     if (token && userId) {
-      // Save to localStorage
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify({
+      const userData = {
         id: userId,
         userType,
         firstname,
         lastname,
         email,
         avatarUrl
-      }));
+      };
 
-      // Redirect based on role
-      if (userType === 'STUDENT') {
-        navigate('/student/dashboard');
-      } else if (userType === 'TEACHER') {
-        navigate('/teacher/dashboard');
+      // Check if this window has an opener (parent window)
+      if (window.opener) {
+        // Send the data back to the main window
+        window.opener.postMessage({
+          type: 'GOOGLE_LINK_SUCCESS',
+          token: token,
+          user: userData
+        }, window.location.origin); // Security: Only allow same origin
+        
+        // Close the popup
+        window.close();
+      } else {
+        // NORMAL LOGIN FLOW (Not a popup)
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(userData));
+
+        if (userType === 'STUDENT') {
+          navigate('/student/dashboard');
+        } else if (userType === 'TEACHER') {
+          navigate('/teacher/dashboard');
+        }
       }
     } else {
-      navigate('/login/student');
+      // Error or Cancelled
+      if (window.opener) {
+        window.opener.postMessage({ type: 'GOOGLE_LINK_ERROR' }, window.location.origin);
+        window.close();
+      } else {
+        navigate('/login/student');
+      }
     }
   }, [searchParams, navigate]);
 
@@ -49,7 +69,7 @@ export default function OAuthCallback() {
     }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔄</div>
-        <div>Authenticating with Google...</div>
+        <div>Connecting to Google...</div>
       </div>
     </div>
   );

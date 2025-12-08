@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import authService from '../services/authService';
-import api from '../services/api'; // Direct API call for dashboard specific
-import '../css/StudentDashboard.css'; // Re-use the card styles
+import api from '../services/api'; 
+import '../css/StudentDashboard.css'; 
 
 export default function TeacherDashboard() {
   const navigate = useNavigate();
@@ -36,6 +36,15 @@ export default function TeacherDashboard() {
     if (hour < 12) return "Good morning";
     if (hour < 18) return "Good afternoon";
     return "Good evening";
+  };
+
+  // Helper to open the document
+  const handleOpenDocument = (driveFileId) => {
+    if (driveFileId) {
+      window.open(`https://drive.google.com/file/d/${driveFileId}/view`, '_blank');
+    } else {
+      alert("File not accessible.");
+    }
   };
 
   return (
@@ -99,25 +108,58 @@ export default function TeacherDashboard() {
               {loading ? <p style={{padding:'1rem', color:'#666'}}>Loading activity...</p> : 
                stats.recentActivity.length === 0 ? <p style={{padding:'1rem', color:'#666'}}>No submissions yet.</p> :
                (
-                 <table className="submissions-table" style={{width: '100%'}}>
+                 <table className="submissions-table" style={{width: '100%', borderCollapse: 'collapse'}}>
                    <thead>
                      <tr>
-                       <th style={{textAlign:'left', padding:'1rem', color:'#64748b'}}>Student</th>
-                       <th style={{textAlign:'left', padding:'1rem', color:'#64748b'}}>Document</th>
-                       <th style={{textAlign:'left', padding:'1rem', color:'#64748b'}}>Date</th>
-                       <th style={{textAlign:'right', padding:'1rem', color:'#64748b'}}>Action</th>
+                       <th style={{textAlign:'left', padding:'1rem', color:'#64748b', borderBottom: '2px solid #e2e8f0'}}>Student</th>
+                       <th style={{textAlign:'left', padding:'1rem', color:'#64748b', borderBottom: '2px solid #e2e8f0'}}>Document</th>
+                       <th style={{textAlign:'left', padding:'1rem', color:'#64748b', borderBottom: '2px solid #e2e8f0'}}>Date</th>
+                       <th style={{textAlign:'right', padding:'1rem', color:'#64748b', borderBottom: '2px solid #e2e8f0'}}>Action</th>
                      </tr>
                    </thead>
                    <tbody>
                      {stats.recentActivity.map((doc) => (
-                       <tr key={doc.id} style={{borderTop: '1px solid #e2e8f0'}}>
-                         <td style={{padding:'1rem', fontWeight:'600'}}>{doc.studentName}</td>
-                         <td style={{padding:'1rem', color:'#2563eb'}}>{doc.filename}</td>
+                       <tr key={doc.id} style={{borderBottom: '1px solid #e2e8f0'}}>
+                         {/* ✅ FIXED: Added specific color to override white text */}
+                         <td style={{padding:'1rem', fontWeight:'600', color: '#1e293b'}}>{doc.studentName}</td>
+                         
+                         {/* ✅ FIXED: Made clickable */}
+                         <td style={{padding:'1rem'}}>
+                            <button 
+                                onClick={() => handleOpenDocument(doc.driveFileId)}
+                                style={{
+                                    background: 'none', 
+                                    border: 'none', 
+                                    color: '#2563eb', 
+                                    cursor: 'pointer', 
+                                    textDecoration: 'none', 
+                                    fontWeight: '500',
+                                    padding: 0,
+                                    fontSize: 'inherit'
+                                }}
+                                onMouseEnter={(e) => e.target.style.textDecoration = 'underline'}
+                                onMouseLeave={(e) => e.target.style.textDecoration = 'none'}
+                            >
+                                {doc.filename}
+                            </button>
+                         </td>
+                         
                          <td style={{padding:'1rem', color:'#64748b'}}>{new Date(doc.uploadDate).toLocaleDateString()}</td>
+                         
                          <td style={{padding:'1rem', textAlign:'right'}}>
+                           {/* ✅ FIXED: Added specific color to button text */}
                            <button 
                              onClick={() => navigate(`/classroom/${doc.classroomId}`)}
-                             style={{padding:'0.4rem 0.8rem', borderRadius:'6px', border:'1px solid #e2e8f0', background:'white', cursor:'pointer', fontSize:'0.85rem'}}
+                             style={{
+                                 padding:'0.4rem 0.8rem', 
+                                 borderRadius:'6px', 
+                                 border:'1px solid #e2e8f0', 
+                                 background:'white', 
+                                 color: '#334155', // Dark text color
+                                 cursor:'pointer', 
+                                 fontSize:'0.85rem',
+                                 fontWeight: '500'
+                             }}
                            >
                              View Class
                            </button>

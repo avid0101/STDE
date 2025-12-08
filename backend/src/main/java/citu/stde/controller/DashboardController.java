@@ -53,9 +53,10 @@ public class DashboardController {
                 .filename(doc.getFilename())
                 .studentName(doc.getUser().getFirstname() + " " + doc.getUser().getLastname())
                 .uploadDate(doc.getUploadDate())
-                .overallScore(null) // We don't need full score details for the list
+                .overallScore(null) 
                 .status(doc.getStatus())
                 .classroomId(doc.getClassroom().getId()) // Needed for link
+                .driveFileId(doc.getDriveFileId())
                 .build()
         ).collect(Collectors.toList());
 

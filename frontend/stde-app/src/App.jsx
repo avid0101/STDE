@@ -14,6 +14,8 @@ import ClassroomDetails from './pages/ClassroomDetails';
 import OAuthCallback from "./pages/OAuthCallback";
 import TeacherProfile from "./pages/TeacherProfile";
 import ProtectedRoute from "./components/ProtectedRoute";
+import ForgotPassword from "./pages/ForgotPassword"; 
+import ResetPassword from "./pages/ResetPassword";
 
 export default function App() {
   return (
@@ -26,6 +28,10 @@ export default function App() {
       <Route path="/register/student" element={<Register />} />
       <Route path="/login/teacher" element={<TeacherLogin />} />
       <Route path="/register/teacher" element={<TeacherRegister />} />
+
+      {/* PASSWORD RESET */}
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       
       {/* Legacy */}
       <Route path="/login" element={<Navigate to="/login/student" replace />} />
