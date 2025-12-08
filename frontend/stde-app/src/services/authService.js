@@ -111,6 +111,27 @@ const authService = {
     } catch (error) {
       throw error.response?.data?.message || 'Failed to reset password';
     }
+  },
+
+  // Admin function to fetch all users
+  getAllUsers: async () => {
+    try {
+      // Assuming 'api' is the axios instance from api.js
+      const response = await api.get('/users/all');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data?.error || 'Failed to fetch all users';
+    }
+  },
+
+  // Admin function to update user role/status
+  updateUserRoleAndStatus: async (userId, userType, isActive) => {
+    try {
+      const response = await api.patch(`/users/${userId}`, { userType, isActive });
+      return response.data.user;
+    } catch (error) {
+      throw error.response?.data?.error || 'Failed to update user';
+    }
   }
 };
 

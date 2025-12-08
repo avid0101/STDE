@@ -16,12 +16,29 @@ import TeacherProfile from "./pages/TeacherProfile";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ForgotPassword from "./pages/ForgotPassword"; 
 import ResetPassword from "./pages/ResetPassword";
+import AdminDashboard from "./pages/AdminDashboard";
+import AdminLogin from "./pages/AdminLogin";
 
 export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/login/student" replace />} />
       <Route path="/auth/callback" element={<OAuthCallback />} />
+
+      {/* ADMIN ROUTES - Isolated */}
+      <Route
+        path="/admin/dashboard" 
+        element={
+          <ProtectedRoute allowedRoles={["ADMIN"]}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route 
+        path="/admin"
+         element={<
+          AdminLogin />} 
+      />
 
       {/* AUTH */}
       <Route path="/login/student" element={<Login />} />
@@ -95,6 +112,17 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+
+      {/* ✅ ADDED: ADMIN */}
+      <Route
+        path="/admin/dashboard" 
+        element={
+          <ProtectedRoute allowedRoles={["ADMIN"]}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
+
       <Route path="*" element={<h1>404 Page Not Found</h1>} />
     </Routes>
   );
