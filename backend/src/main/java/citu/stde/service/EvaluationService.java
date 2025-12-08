@@ -42,6 +42,7 @@ public class EvaluationService {
     private final GoogleDriveService googleDriveService;
     private final ClassroomService classroomService; 
     private final UserRepository userRepository;
+    private final AdminService adminService; 
 
     // ==========================================
     // DEV SETTINGS (Toggle here for testing)
@@ -124,6 +125,9 @@ public class EvaluationService {
 
             doc.setStatus(DocumentStatus.COMPLETED);
             documentRepository.save(doc);
+
+            // Record evaluation success
+            adminService.logActivity("EVALUATE", doc.getUser().getEmail(), "Evaluated document: " + doc.getFilename());
 
             return mapToDTO(savedEval, doc.getFilename());
 
@@ -229,6 +233,10 @@ public class EvaluationService {
         Evaluation saved = evaluationRepository.save(newEval);
         currentDoc.setStatus(DocumentStatus.COMPLETED);
         documentRepository.save(currentDoc);
+        
+        // Record cached evaluation
+        adminService.logActivity("EVALUATE_CACHE", currentDoc.getUser().getEmail(), "Returned cached evaluation for: " + currentDoc.getFilename());
+        
         return mapToDTO(saved, currentDoc.getFilename());
     }
 
@@ -249,6 +257,10 @@ public class EvaluationService {
         Evaluation savedEval = evaluationRepository.save(eval);
         doc.setStatus(DocumentStatus.COMPLETED); 
         documentRepository.save(doc);
+        
+        // Record teacher override
+        adminService.logActivity("OVERRIDE", "Teacher (ID: " + teacherId + ")", "Overrode score for: " + doc.getFilename() + " to " + newScore);
+        
         return mapToDTO(savedEval, doc.getFilename());
     }
 

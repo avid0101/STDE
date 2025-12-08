@@ -1,153 +1,207 @@
 import { useState, useEffect } from 'react';
 import authService from '../services/authService';
+import api from '../services/api'; // Direct API access for new endpoints
 import '../css/StudentDashboard.css'; 
 
 export default function AdminDashboard() {
+  const [activeTab, setActiveTab] = useState('users'); // 'users', 'logs', 'health'
+  
+  // Data States
   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [health, setHealth] = useState(null);
+  
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    loadUsers();
-    // For documentation purposes, this component serves both the Dashboard and User Management pages.
-  }, []);
+    loadData();
+  }, [activeTab]);
 
-  const loadUsers = async () => {
+  const loadData = async () => {
     setLoading(true);
-    setError(null);
     try {
-      const data = await authService.getAllUsers();
-      setUsers(data);
+      if (activeTab === 'users') {
+        // Use the new AdminController endpoint path or existing service
+        const data = await api.get('/admin/users');
+        setUsers(data.data);
+      } else if (activeTab === 'logs') {
+        const data = await api.get('/admin/logs');
+        setLogs(data.data);
+      } else if (activeTab === 'health') {
+        const data = await api.get('/admin/health');
+        setHealth(data.data);
+      }
     } catch (err) {
-      setError("Failed to fetch users: " + err);
+      console.error("Failed to load data", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpdate = async (userId, field, value) => {
-    const userToUpdate = users.find(u => u.id === userId);
-    
-    // Optimistic UI update
-    setUsers(prevUsers => prevUsers.map(u => 
-        u.id === userId ? { ...u, [field]: value } : u
-    ));
-    
+  const handleUpdateUser = async (userId, field, value) => {
     try {
-      const newUserType = field === 'userType' ? value : userToUpdate.userType;
-      const newIsActive = field === 'isActive' ? value : userToUpdate.isActive;
-      
-      await authService.updateUserRoleAndStatus(
-        userId, 
-        newUserType, 
-        newIsActive
-      );
-      
-      console.log(`User ${userId} updated successfully.`);
-
-    } catch (err) {
-      alert("Update failed: " + err);
-      loadUsers(); // Reload to revert failed change and show server's state
+      await api.patch(`/admin/users/${userId}`, { [field]: value });
+      loadData(); // Refresh list
+    } catch (e) {
+      alert("Update failed");
     }
   };
 
-  const getStatusStyle = (isActive) => ({
-    display: 'inline-block',
-    padding: '0.25rem 0.75rem',
-    borderRadius: '12px',
-    fontWeight: '700',
-    fontSize: '0.875rem',
-    backgroundColor: isActive ? '#d1fae5' : '#fee2e2',
-    color: isActive ? '#065f46' : '#991b1b',
-  });
-
   return (
-    // Replaced 'ai-evaluate-container' with a simple full-page container
     <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '2rem' }}> 
-      
-      {/* Removed <Sidebar /> */}
-      
-      {/* Replaced 'main-content' with a full-width container */}
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        <div className="header">
-          <div className="breadcrumb">
-            <span className="breadcrumb-item">System</span>
-            <span className="breadcrumb-separator">/</span>
-            <span className="breadcrumb-item">Admin Dashboard</span>
+        
+        {/* Header */}
+        <div className="header" style={{marginBottom: '2rem'}}>
+          <h1 className="page-title" style={{color: '#1f2937'}}>Admin Console</h1>
+          <div style={{display:'flex', gap:'1rem', marginTop:'1rem'}}>
+            <TabButton label="User Management" active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
+            <TabButton label="Activity Logs" active={activeTab === 'logs'} onClick={() => setActiveTab('logs')} />
+            <TabButton label="System Health" active={activeTab === 'health'} onClick={() => setActiveTab('health')} />
           </div>
-          <h1 className="page-title">System Administration & User Management</h1>
         </div>
 
-        {/* This section fulfills the 'Users' view (Section 8.1.2) */}
-        <div className="my-uploads-section" style={{marginLeft: 0, padding: '2rem'}}>
-            <div className="section-header">
-              <h2 className="section-title">User Management ({users.length} Total Users)</h2>
-            </div>
+        {/* CONTENT AREA */}
+        <div className="my-uploads-section" style={{marginLeft: 0, padding: '2rem', backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)'}}>
             
-            {error && <div className="alert alert-error">{error}</div>}
-            
-            {loading ? <p style={{padding:'1rem', color:'#666'}}>Loading users...</p> : (
-              <table style={{width: '100%', borderCollapse: 'collapse'}}>
-                <thead>
-                  <tr>
-                    <th style={{textAlign:'left', padding:'1rem', color:'#64748b', borderBottom: '2px solid #e2e8f0'}}>Name</th>
-                    <th style={{textAlign:'left', padding:'1rem', color:'#64748b', borderBottom: '2px solid #e2e8f0'}}>Email</th>
-                    <th style={{textAlign:'left', padding:'1rem', color:'#64748b', borderBottom: '2px solid #e2e8f0'}}>Role</th>
-                    <th style={{textAlign:'left', padding:'1rem', color:'#64748b', borderBottom: '2px solid #e2e8f0'}}>Status</th>
-                    <th style={{textAlign:'left', padding:'1rem', color:'#64748b', borderBottom: '2px solid #e2e8f0'}}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((user) => (
-                    <tr key={user.id} style={{borderBottom: '1px solid #e2e8f0'}}>
-                      <td style={{padding:'1rem', fontWeight:'600', color: '#1e293b'}}>{user.firstname} {user.lastname}</td>
-                      <td style={{padding:'1rem', color: '#334155'}}>{user.email}</td>
-                      
-                      {/* Role Selector (Reassign roles) */}
-                      <td style={{padding:'1rem'}}>
-                        <select
-                          value={user.userType}
-                          onChange={(e) => handleUpdate(user.id, 'userType', e.target.value)}
-                          style={{padding: '0.4rem', borderRadius: '4px', border: '1px solid #d1d5db', backgroundColor: '#fff'}}
-                        >
-                          <option value="STUDENT">STUDENT</option>
-                          <option value="TEACHER">TEACHER</option>
-                          <option value="ADMIN">ADMIN</option>
-                        </select>
-                      </td>
-                      
-                      {/* Status Display (Active/Deactivate) */}
-                      <td style={{padding:'1rem'}}>
-                        <span style={getStatusStyle(user.isActive)}>
-                           {user.isActive ? 'ACTIVE' : 'INACTIVE'}
-                        </span>
-                      </td>
-
-                      {/* Toggle Button (Approve or Deactivate accounts) */}
-                      <td style={{padding:'1rem'}}>
-                         <button
-                           onClick={() => handleUpdate(user.id, 'isActive', !user.isActive)}
-                           style={{
-                               padding:'0.4rem 0.8rem', 
-                               borderRadius:'6px', 
-                               border:'1px solid #d1d5db', 
-                               background:'white', 
-                               color: user.isActive ? '#dc2626' : '#059669',
-                               cursor:'pointer', 
-                               fontSize:'0.85rem',
-                               fontWeight: '500'
-                           }}
-                         >
-                           {user.isActive ? 'Deactivate' : 'Activate'}
-                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* USERS TAB */}
+            {activeTab === 'users' && (
+              <>
+                <h2 className="section-title" style={{color: '#1f2937'}}>Registered Users</h2>
+                {loading ? <p style={{color: '#4b5563'}}>Loading...</p> : (
+                  <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                    <thead>
+                      <tr style={{textAlign:'left', backgroundColor: '#f9fafb'}}>
+                        <th style={{padding:'12px', color:'#374151', fontWeight: '600'}}>Name</th>
+                        <th style={{padding:'12px', color:'#374151', fontWeight: '600'}}>Email</th>
+                        <th style={{padding:'12px', color:'#374151', fontWeight: '600'}}>Role</th>
+                        <th style={{padding:'12px', color:'#374151', fontWeight: '600'}}>Status</th>
+                        <th style={{padding:'12px', color:'#374151', fontWeight: '600'}}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {users.map(u => (
+                        <tr key={u.id} style={{borderTop:'1px solid #e5e7eb'}}>
+                          <td style={{padding:'12px', color:'#1f2937'}}>{u.firstname} {u.lastname}</td>
+                          <td style={{padding:'12px', color:'#4b5563'}}>{u.email}</td>
+                          <td style={{padding:'12px'}}>
+                             <select 
+                               value={u.userType}
+                               onChange={(e) => handleUpdateUser(u.id, 'userType', e.target.value)}
+                               style={{padding:'6px 10px', borderRadius:'6px', border:'1px solid #d1d5db', color:'#1f2937', backgroundColor:'white'}}
+                             >
+                               <option value="STUDENT">Student</option>
+                               <option value="TEACHER">Teacher</option>
+                               <option value="ADMIN">Admin</option>
+                             </select>
+                          </td>
+                          <td style={{padding:'12px'}}>
+                            <span style={{
+                              padding:'4px 12px', borderRadius:'6px', fontSize:'0.875rem', fontWeight: '500',
+                              background: u.isActive ? '#dcfce7' : '#fee2e2',
+                              color: u.isActive ? '#166534' : '#991b1b'
+                            }}>
+                              {u.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                          <td style={{padding:'12px'}}>
+                            <button 
+                              onClick={() => handleUpdateUser(u.id, 'isActive', !u.isActive)}
+                              style={{cursor:'pointer', color:'#2563eb', border:'none', background:'none', fontWeight:'500', textDecoration:'underline'}}
+                            >
+                              {u.isActive ? 'Deactivate' : 'Activate'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
             )}
+
+            {/* LOGS TAB */}
+            {activeTab === 'logs' && (
+              <>
+                <h2 className="section-title" style={{color: '#1f2937'}}>System Activity Logs</h2>
+                {loading ? <p style={{color: '#4b5563'}}>Loading...</p> : (
+                  <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                    <thead>
+                      <tr style={{textAlign:'left', backgroundColor: '#f9fafb'}}>
+                        <th style={{padding:'12px', color:'#374151', fontWeight: '600'}}>Time</th>
+                        <th style={{padding:'12px', color:'#374151', fontWeight: '600'}}>Action</th>
+                        <th style={{padding:'12px', color:'#374151', fontWeight: '600'}}>User</th>
+                        <th style={{padding:'12px', color:'#374151', fontWeight: '600'}}>Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {logs.map(log => (
+                        <tr key={log.id} style={{borderTop:'1px solid #e5e7eb'}}>
+                          <td style={{padding:'12px', fontSize:'0.875rem', color:'#6b7280'}}>
+                            {new Date(log.timestamp).toLocaleString()}
+                          </td>
+                          <td style={{padding:'12px'}}>
+                            <span style={{fontWeight:'600', fontSize:'0.875rem', color:'#1f2937'}}>{log.action}</span>
+                          </td>
+                          <td style={{padding:'12px', color:'#4b5563'}}>{log.userEmail}</td>
+                          <td style={{padding:'12px', color:'#6b7280'}}>{log.details}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
+
+            {/* HEALTH TAB */}
+            {activeTab === 'health' && (
+              <>
+                <h2 className="section-title" style={{color: '#1f2937'}}>System Health Status</h2>
+                {loading || !health ? <p style={{color: '#4b5563'}}>Checking systems...</p> : (
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:'1.5rem'}}>
+                    <HealthCard title="Database" status={health.database} />
+                    <HealthCard title="OpenAI GPT-4o" status={health.openai} />
+                    <HealthCard title="Google API" status={health.googleApi} />
+                  </div>
+                )}
+              </>
+            )}
+
         </div>
       </div>
     </div>
   );
 }
+
+// Helpers
+const TabButton = ({ label, active, onClick }) => (
+  <button 
+    onClick={onClick}
+    style={{
+      padding: '0.75rem 1.5rem',
+      borderRadius: '8px',
+      border: active ? 'none' : '1px solid #e5e7eb',
+      background: active ? '#2563eb' : 'white',
+      color: active ? 'white' : '#374151',
+      cursor: 'pointer',
+      fontWeight: '600',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+      transition: 'all 0.2s ease'
+    }}
+  >
+    {label}
+  </button>
+);
+
+const HealthCard = ({ title, status }) => {
+  const isUp = status && status.startsWith("UP");
+  return (
+    <div style={{padding:'1.5rem', borderRadius:'12px', border:'1px solid #e5e7eb', background:'white', boxShadow: '0 1px 3px rgba(0,0,0,0.05)'}}>
+      <h3 style={{margin:'0 0 0.5rem 0', fontSize:'1rem', color:'#6b7280', fontWeight:'600'}}>{title}</h3>
+      <div style={{display:'flex', alignItems:'center', gap:'0.5rem'}}>
+        <div style={{width:'12px', height:'12px', borderRadius:'50%', background: isUp ? '#22c55e' : '#ef4444'}}></div>
+        <span style={{fontWeight:'700', fontSize:'1.25rem', color: isUp ? '#15803d' : '#b91c1c'}}>{status}</span>
+      </div>
+    </div>
+  );
+};
