@@ -44,7 +44,8 @@ public class DocumentService {
     private final ClassroomRepository classroomRepository;
     private final UserRepository userRepository;
     private final EvaluationRepository evaluationRepository; 
-    private final OAuth2AuthorizedClientService clientService; 
+    private final OAuth2AuthorizedClientService clientService;
+    private final AdminService adminService; 
 
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -81,11 +82,12 @@ public class DocumentService {
             throw new IllegalArgumentException("Document is already submitted.");
         }
 
-        // Optional: Ensure it has been evaluated first?
-        // if (doc.getStatus() != DocumentStatus.COMPLETED) { ... }
-
         doc.setIsSubmitted(true);
         Document saved = documentRepository.save(doc);
+
+        // Record submission
+        adminService.logActivity("SUBMIT", doc.getUser().getEmail(), "Submitted document: " + doc.getFilename());
+
         return convertToDTO(saved);
     }
 
@@ -101,8 +103,6 @@ public class DocumentService {
         if (classId != null) {
             classroom = classroomRepository.findById(classId)
                     .orElseThrow(() -> new IllegalArgumentException("Classroom not found"));
-            // Note: Currently still uploading to teacher folder. 
-            // In a future "Idea 2" update, this would go to student's draft folder.
             destinationFolderId = classroom.getDriveFolderId(); 
         }
 
@@ -123,6 +123,10 @@ public class DocumentService {
                 .build();
 
         Document savedDocument = documentRepository.save(document);
+
+        // Record upload
+        adminService.logActivity("UPLOAD", user.getEmail(), "Uploaded file: " + file.getOriginalFilename());
+
         return convertToDTO(savedDocument);
     }
 
@@ -156,6 +160,9 @@ public class DocumentService {
             System.err.println("Warning: Failed to delete file from Drive: " + e.getMessage());
         }
         documentRepository.delete(document);
+
+        // Record deletion
+        adminService.logActivity("DELETE", document.getUser().getEmail(), "Deleted document: " + document.getFilename());
     }
 
     public Document copyFromGoogleDrive(String originalFileId, String classIdRaw, UUID userId) throws IOException {
@@ -198,7 +205,12 @@ public class DocumentService {
         doc.setIsCloudFile(true); 
         doc.setIsSubmitted(false);
 
-        return documentRepository.save(doc);
+        Document saved = documentRepository.save(doc);
+
+        // Record import from Drive
+        adminService.logActivity("IMPORT", user.getEmail(), "Imported from Drive: " + copiedFile.getName());
+
+        return saved;
     }
 
     private Drive buildDriveClientForCurrentUser() {

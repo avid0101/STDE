@@ -27,6 +27,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final AuthenticationManager authenticationManager;
+    private final AdminService adminService;
 
     public ResponseEntity<?> register(RegisterRequest req) {
         // Check if email already exists
@@ -39,6 +40,7 @@ public class AuthService {
         if (req.userType() != null && req.userType().equalsIgnoreCase("TEACHER")) {
             type = UserType.TEACHER;
         }
+        // Note: We do NOT allow creating ADMINs via the public register endpoint for security.
 
         // Create new user
         User user = User.builder()
@@ -53,6 +55,9 @@ public class AuthService {
             .build();
 
         userRepository.save(user);
+
+        // Record the registration event
+        adminService.logActivity("REGISTER", user.getEmail(), "New user registered as " + type);
 
         return ResponseEntity.ok(Map.of(
             "message", "User registered successfully",
@@ -87,6 +92,9 @@ public class AuthService {
                 user.getUserType().name()
             );
 
+            // Record the login event
+            adminService.logActivity("LOGIN", user.getEmail(), "User logged in successfully");
+
             // Prepare response
             Map<String, Object> response = new HashMap<>();
             response.put("token", token);
@@ -102,6 +110,8 @@ public class AuthService {
             return ResponseEntity.ok(response);
 
         } catch (AuthenticationException e) {
+            // Optional: Log failed login attempts?
+            // adminService.logActivity("LOGIN_FAILED", req.email(), "Invalid credentials provided");
             return ResponseEntity.badRequest().body(Map.of("message", "Invalid email or password"));
         }
     }
