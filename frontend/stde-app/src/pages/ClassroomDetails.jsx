@@ -359,9 +359,9 @@ export default function ClassroomDetails() {
       {/* Report Modal (Keep existing) */}
       {showReportModal && (
         <div className="modal-overlay" onClick={() => setShowReportModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '1000px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column'}}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{maxWidth: '1000px', maxHeight: '90vh', display: 'flex', flexDirection: 'column'}}>
                <div className="modal-header"><h2>Evaluation Report</h2><button className="modal-close" onClick={() => setShowReportModal(false)}>×</button></div>
-               <div className="modal-body" style={{overflowY: 'auto', padding: '2rem'}}>
+               <div className="modal-body" style={{overflowY: 'auto', padding: '2rem', flex: 1, minHeight: 0, maxHeight: 'calc(90vh - 80px)'}}>
                   {modalLoading ? <div className="loading-state"><div className="spinner"></div><p>Loading...</p></div> : 
                    reportData && reportData.error ? <div className="error-state"><p>{reportData.message}</p></div> : 
                    (

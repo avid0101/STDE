@@ -5,6 +5,7 @@ import citu.stde.entity.User;
 import citu.stde.repository.UserRepository;
 import citu.stde.service.ClassroomService;
 import citu.stde.repository.ClassroomRepository;
+import citu.stde.dto.ClassroomDTO;
 
 import lombok.RequiredArgsConstructor;
 
@@ -34,9 +35,24 @@ public class ClassroomController {
     }
 
     @GetMapping("/teacher")
-    public ResponseEntity<List<Classroom>> getTeacherClassrooms(Authentication authentication) {
+    public ResponseEntity<List<ClassroomDTO>> getTeacherClassrooms(Authentication authentication) {
         UUID teacherId = getUserId(authentication);
-        return ResponseEntity.ok(classroomRepository.findByTeacherId(teacherId));
+        List<Classroom> classrooms = classroomRepository.findByTeacherId(teacherId);
+        
+        List<ClassroomDTO> dtos = classrooms.stream()
+            .map(c -> ClassroomDTO.builder()
+                .id(c.getId())
+                .name(c.getName())
+                .section(c.getSection())
+                .classCode(c.getClassCode())
+                .teacherId(c.getTeacherId())
+                .driveFolderId(c.getDriveFolderId())
+                .createdAt(c.getCreatedAt())
+                .studentCount(c.getStudents() != null ? c.getStudents().size() : 0)
+                .build())
+            .collect(Collectors.toList());
+        
+        return ResponseEntity.ok(dtos);
     }
 
     // Pass driveFolderId to service

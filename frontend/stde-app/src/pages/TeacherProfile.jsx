@@ -270,8 +270,15 @@ export default function TeacherProfile() {
 
               <div className="info-item">
                 <label className="info-label">Email Address</label>
-                <div className="info-value" style={{backgroundColor: isEditing ? '#f3f4f6' : '#f9fafb', color: isEditing ? '#9ca3af' : 'inherit'}}>
-                  {user.email} {isEditing && <span style={{fontSize:'0.75rem'}}>(Cannot be changed)</span>}
+                <div className="info-value">
+                  <span className="badge badge-green" style={{textTransform: 'none'}}>
+                    {user.email}
+                  </span>
+                  {isEditing && (
+                    <span style={{fontSize:'0.75rem', marginLeft: '8px', color: '#6b7280'}}>
+                      (Cannot be changed)
+                    </span>
+                  )}
                 </div>
               </div>
 

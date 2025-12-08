@@ -30,43 +30,40 @@ public class DashboardController {
     private final UserRepository userRepository;
 
     @GetMapping("/teacher")
-    public ResponseEntity<?> getTeacherStats(Authentication authentication) {
-        UUID teacherId = getUserId(authentication);
+        public ResponseEntity<?> getTeacherStats(Authentication authentication) {
+            UUID teacherId = getUserId(authentication);
 
-        // 1. Counts
-        long totalClasses = classroomRepository.countByTeacherId(teacherId);
-        long totalSubmissions = documentRepository.countByClassroom_TeacherIdAndIsSubmittedTrue(teacherId);
-        
-        // Calculate total students (unique)
-        List<Classroom> classes = classroomRepository.findByTeacherId(teacherId);
-        long totalStudents = classes.stream()
-                .mapToLong(c -> c.getStudents().size())
-                .sum(); // Note: This is total enrollments. For unique students, use a Set logic if needed.
+            // 1. Counts
+            long totalClasses = classroomRepository.countByTeacherId(teacherId);
+            long totalSubmissions = documentRepository.countByClassroom_TeacherIdAndIsSubmittedTrue(teacherId);
+            
+            // Use the new query method
+            long totalStudents = classroomRepository.countUniqueStudentsByTeacherId(teacherId);
 
-        // 2. Recent Activity (Latest 10)
-        List<Document> recentDocs = documentRepository.findByClassroom_TeacherIdAndIsSubmittedTrueOrderByUploadDateDesc(
-                teacherId, PageRequest.of(0, 10));
+            // 2. Recent Activity (Latest 10)
+            List<Document> recentDocs = documentRepository.findByClassroom_TeacherIdAndIsSubmittedTrueOrderByUploadDateDesc(
+                    teacherId, PageRequest.of(0, 10));
 
-        List<DocumentDTO> recentActivity = recentDocs.stream().map(doc -> 
-            DocumentDTO.builder()
-                .id(doc.getId())
-                .filename(doc.getFilename())
-                .studentName(doc.getUser().getFirstname() + " " + doc.getUser().getLastname())
-                .uploadDate(doc.getUploadDate())
-                .overallScore(null) 
-                .status(doc.getStatus())
-                .classroomId(doc.getClassroom().getId()) // Needed for link
-                .driveFileId(doc.getDriveFileId())
-                .build()
-        ).collect(Collectors.toList());
+            List<DocumentDTO> recentActivity = recentDocs.stream().map(doc -> 
+                DocumentDTO.builder()
+                    .id(doc.getId())
+                    .filename(doc.getFilename())
+                    .studentName(doc.getUser().getFirstname() + " " + doc.getUser().getLastname())
+                    .uploadDate(doc.getUploadDate())
+                    .overallScore(null) 
+                    .status(doc.getStatus())
+                    .classroomId(doc.getClassroom().getId())
+                    .driveFileId(doc.getDriveFileId())
+                    .build()
+            ).collect(Collectors.toList());
 
-        return ResponseEntity.ok(Map.of(
-            "totalClasses", totalClasses,
-            "totalStudents", totalStudents,
-            "totalSubmissions", totalSubmissions,
-            "recentActivity", recentActivity
-        ));
-    }
+            return ResponseEntity.ok(Map.of(
+                "totalClasses", totalClasses,
+                "totalStudents", totalStudents,
+                "totalSubmissions", totalSubmissions,
+                "recentActivity", recentActivity
+            ));
+        }
 
     private UUID getUserId(Authentication authentication) {
         String email = authentication.getName();

@@ -31,10 +31,10 @@ const classroomService = {
     }
   },
 
-  // Get all classes
+  // Get all classes - CHANGED TO /teacher
   getAllClassrooms: async () => {
     try {
-      const response = await api.get('/classrooms');
+      const response = await api.get('/classrooms/teacher'); // CHANGED THIS LINE
       return response.data;
     } catch (error) {
       console.error("Failed to fetch classrooms", error);

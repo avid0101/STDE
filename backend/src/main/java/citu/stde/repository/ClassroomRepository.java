@@ -2,6 +2,8 @@ package citu.stde.repository;
 
 import citu.stde.entity.Classroom;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
@@ -23,4 +25,8 @@ public interface ClassroomRepository extends JpaRepository<Classroom, UUID> {
 
     // Count classes for dashboard
     long countByTeacherId(UUID teacherId);
+    
+    // ADD THIS METHOD - Count unique students across all of a teacher's classrooms
+    @Query(value = "SELECT COUNT(DISTINCT student_id) FROM student_enrollments WHERE classroom_id IN (SELECT id FROM classrooms WHERE teacher_id = :teacherId)", nativeQuery = true)
+    long countUniqueStudentsByTeacherId(@Param("teacherId") UUID teacherId);
 }
