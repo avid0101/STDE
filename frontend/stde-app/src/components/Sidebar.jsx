@@ -23,7 +23,11 @@ export default function Sidebar() {
 
   const handleLogout = () => {
     authService.logout();
-    navigate("/login/student");
+    if (userRole === "teacher") {
+      navigate("/login/teacher");
+    } else {
+      navigate("/login/student");
+    }
   };
 
   const teacherNavItems = [
