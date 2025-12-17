@@ -3,25 +3,27 @@ import { useNavigate } from "react-router-dom";
 
 import Sidebar from "../components/Sidebar";
 import classroomService from "../services/classroomService";
+import { useToast } from '../components/ToastContext';
 import "../css/TeacherClassroom.css";
 
 export default function TeacherClassroom() {
   const navigate = useNavigate();
-  
+
   // Modal States
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  
+
   const [formData, setFormData] = useState({
     name: "",
     code: "",
     section: "",
-    folderId: "" 
+    folderId: ""
   });
 
-  const [classrooms, setClassrooms] = useState([]); 
+  const [classrooms, setClassrooms] = useState([]);
   const [loading, setLoading] = useState(true);
+  const toast = useToast();
 
   useEffect(() => {
     loadClassrooms();
@@ -59,12 +61,12 @@ export default function TeacherClassroom() {
   };
 
   const openEditModal = (e, cls) => {
-    e.stopPropagation(); 
-    setFormData({ 
-      name: cls.name, 
-      code: cls.classCode, 
+    e.stopPropagation();
+    setFormData({
+      name: cls.name,
+      code: cls.classCode,
       section: cls.section,
-      folderId: cls.driveFolderId || "" 
+      folderId: cls.driveFolderId || ""
     });
     setIsEditing(true);
     setEditingId(cls.id);
@@ -72,14 +74,14 @@ export default function TeacherClassroom() {
   };
 
   const handleDelete = async (e, id) => {
-    e.stopPropagation(); 
+    e.stopPropagation();
     if (!window.confirm("Are you sure you want to delete this class? This will also delete the Google Drive folder.")) return;
 
     try {
       await classroomService.deleteClassroom(id);
-      loadClassrooms(); 
+      loadClassrooms();
     } catch (err) {
-      alert("Error deleting class: " + err);
+      toast.error('Error deleting class: ' + err);
     }
   };
 
@@ -90,21 +92,21 @@ export default function TeacherClassroom() {
         name: formData.name,
         section: formData.section,
         classCode: formData.code,
-        driveFolderId: formData.folderId 
+        driveFolderId: formData.folderId
       };
 
       if (isEditing) {
         await classroomService.updateClassroom(editingId, payload);
-        alert("Class updated successfully!");
+        toast.success('Class updated successfully!');
       } else {
         await classroomService.createClassroom(payload);
-        alert("Class created successfully!");
+        toast.success('Class created successfully!');
       }
 
       setShowModal(false);
       loadClassrooms();
     } catch (err) {
-      alert(`Error ${isEditing ? 'updating' : 'creating'} class: ` + err);
+      toast.error(`Error ${isEditing ? 'updating' : 'creating'} class: ` + err);
     }
   };
 
@@ -123,7 +125,7 @@ export default function TeacherClassroom() {
           </div>
           <button className="create-btn" onClick={openCreateModal}>
             <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path d="M12 4v16m8-8H4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M12 4v16m8-8H4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             Create Classroom
           </button>
@@ -131,43 +133,43 @@ export default function TeacherClassroom() {
 
         <div className="classroom-grid">
           {classrooms.map((classroom) => (
-            <div 
-              key={classroom.id} 
+            <div
+              key={classroom.id}
               className="classroom-card"
               onClick={() => handleClassroomClick(classroom.id)}
             >
               <div className="classroom-card-header" style={{ backgroundColor: classroom.color }}>
                 <div className="classroom-pattern"></div>
-                
+
                 <div className="card-actions" style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '5px' }}>
-                  <button 
+                  <button
                     onClick={(e) => openEditModal(e, classroom)}
                     style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '4px', padding: '4px', cursor: 'pointer', color: 'white' }}
                     title="Edit Class"
                   >
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </button>
-                  <button 
+                  <button
                     onClick={(e) => handleDelete(e, classroom.id)}
                     style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '4px', padding: '4px', cursor: 'pointer', color: '#fca5a5' }}
                     title="Delete Class"
                   >
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </button>
                 </div>
               </div>
-              
+
               <div className="classroom-card-body">
                 <h3 className="classroom-name">{classroom.name}</h3>
                 <p className="classroom-code">{classroom.classCode} • {classroom.section}</p>
                 <div className="classroom-stats">
                   <div className="stat-item">
                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <span>{classroom.studentCount || 0} students</span>
                   </div>
@@ -191,18 +193,18 @@ export default function TeacherClassroom() {
                     type="text"
                     placeholder="e.g., Software Testing 101"
                     value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     required
                   />
                 </div>
-                
+
                 <div className="form-group">
                   <label>Course Code</label>
                   <input
                     type="text"
                     placeholder="e.g., CS401-2025"
                     value={formData.code}
-                    onChange={(e) => setFormData({...formData, code: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                     required
                   />
                 </div>
@@ -213,7 +215,7 @@ export default function TeacherClassroom() {
                     type="text"
                     placeholder="e.g., Section A"
                     value={formData.section}
-                    onChange={(e) => setFormData({...formData, section: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, section: e.target.value })}
                     required
                   />
                 </div>
@@ -221,14 +223,14 @@ export default function TeacherClassroom() {
                 {!isEditing && (
                   <div className="form-group">
                     <label>Google Drive Folder ID (Optional)</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       placeholder="Leave empty to auto-create folder"
                       value={formData.folderId}
-                      onChange={(e) => setFormData({...formData, folderId: e.target.value})}
-                      style={{fontFamily: 'monospace'}}
+                      onChange={(e) => setFormData({ ...formData, folderId: e.target.value })}
+                      style={{ fontFamily: 'monospace' }}
                     />
-                    <small style={{display: 'block', marginTop: '4px', color: '#64748b', fontSize: '0.8rem'}}>
+                    <small style={{ display: 'block', marginTop: '4px', color: '#64748b', fontSize: '0.8rem' }}>
                       Paste the ID from the URL of your existing Drive folder to link it.
                     </small>
                   </div>

@@ -2,18 +2,20 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import classroomService from '../services/classroomService';
+import { useToast } from '../components/ToastContext';
 import '../css/Classroom.css';
 
 export default function Classroom() {
   const navigate = useNavigate();
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Join Modal State
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [classCode, setClassCode] = useState('');
   const [joinError, setJoinError] = useState('');
   const [joining, setJoining] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     loadClasses();
@@ -23,7 +25,7 @@ export default function Classroom() {
     try {
       setLoading(true);
       const data = await classroomService.getStudentClassrooms();
-      
+
       const classesWithColor = data.map(cls => ({
         ...cls,
         color: getConsistentColor(cls.name + cls.section)
@@ -46,7 +48,7 @@ export default function Classroom() {
       setShowJoinModal(false);
       setClassCode('');
       loadClasses(); // Refresh list to see new class immediately
-      alert("Successfully joined the class!");
+      toast.success('Successfully joined the class!');
     } catch (error) {
       setJoinError(error);
     } finally {
@@ -99,9 +101,9 @@ export default function Classroom() {
         ) : (
           <div className="class-cards-grid">
             {classes.map(cls => (
-              <div 
-                key={cls.id} 
-                className="class-card" 
+              <div
+                key={cls.id}
+                className="class-card"
                 onClick={() => handleClassClick(cls.id)}
                 style={{ cursor: 'pointer' }}
               >
@@ -135,8 +137,8 @@ export default function Classroom() {
                 <form onSubmit={handleJoinClass}>
                   <div className="form-group">
                     <label>Class Code</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       placeholder="Enter code provided by teacher"
                       value={classCode}
                       onChange={(e) => setClassCode(e.target.value)}
@@ -151,9 +153,9 @@ export default function Classroom() {
                     />
                   </div>
                   {joinError && <div style={{ color: 'red', marginBottom: '1rem', fontSize: '0.9rem' }}>{joinError}</div>}
-                  <button 
-                    type="submit" 
-                    className="join-class-btn" 
+                  <button
+                    type="submit"
+                    className="join-class-btn"
                     style={{ width: '100%', borderRadius: '6px' }}
                     disabled={joining}
                   >
