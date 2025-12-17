@@ -40,7 +40,11 @@ export default function ClassroomDetails() {
     cancelText: 'Cancel',
     confirmStyle: 'primary',
     onConfirm: null,
-    documentId: null
+    documentId: null,
+    // Input field properties
+    showInput: false,
+    inputValue: '',
+    inputPlaceholder: ''
   });
 
   const user = authService.getCurrentUser();
@@ -248,9 +252,37 @@ export default function ClassroomDetails() {
     setModalLoading(true); setReportData(null); setShowReportModal(true);
     try { const data = await evaluationService.getDetailedEvaluation(documentId); setReportData({ ...data, filename }); } catch (error) { setReportData({ error: true, message: error.message, filename }); } finally { setModalLoading(false); }
   };
-  const handleOverride = async (documentId, currentScore) => {
-    const newScore = prompt("Enter new score (0-100):"); if (newScore === null) return;
-    try { await evaluationService.overrideScore(documentId, parseInt(newScore)); toast.success('Score updated successfully!'); loadClassroomData(); } catch (e) { toast.error(e.message); }
+  const handleOverride = (documentId, currentScore) => {
+    setConfirmModal({
+      isOpen: true,
+      isExiting: false,
+      title: 'Override Score',
+      message: 'Enter new score (0-100):',
+      confirmText: 'Update Score',
+      cancelText: 'Cancel',
+      confirmStyle: 'primary',
+      documentId: documentId,
+      showInput: true,
+      inputValue: currentScore !== '-' ? String(currentScore) : '',
+      inputPlaceholder: 'Enter score...',
+      onConfirm: () => executeOverride(documentId)
+    });
+  };
+
+  const executeOverride = async (documentId) => {
+    const newScore = parseInt(confirmModal.inputValue);
+    if (isNaN(newScore) || newScore < 0 || newScore > 100) {
+      toast.error('Please enter a valid score between 0 and 100');
+      return;
+    }
+    closeConfirmModal();
+    try {
+      await evaluationService.overrideScore(documentId, newScore);
+      toast.success('Score updated successfully!');
+      loadClassroomData();
+    } catch (e) {
+      toast.error(e.message);
+    }
   };
   const handleOpenDocument = (fid) => window.open(`https://drive.google.com/file/d/${fid}/view`, '_blank');
   const getStatusStyle = (s, sub) => { if (sub) return { backgroundColor: '#d1fae5', color: '#065f46' }; if (s === 'COMPLETED') return { backgroundColor: '#dbeafe', color: '#1e40af' }; return { backgroundColor: '#f3f4f6', color: '#4b5563' }; };
@@ -464,6 +496,11 @@ export default function ClassroomDetails() {
         confirmStyle={confirmModal.confirmStyle}
         onConfirm={confirmModal.onConfirm}
         onCancel={closeConfirmModal}
+        showInput={confirmModal.showInput}
+        inputValue={confirmModal.inputValue}
+        inputPlaceholder={confirmModal.inputPlaceholder}
+        inputType="number"
+        onInputChange={(value) => setConfirmModal(prev => ({ ...prev, inputValue: value }))}
       />
     </>
   );

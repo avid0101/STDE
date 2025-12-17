@@ -9,7 +9,13 @@ export default function ConfirmModal({
     confirmStyle = 'primary', // 'primary', 'danger', 'warning'
     onConfirm,
     onCancel,
-    isExiting = false
+    isExiting = false,
+    // Input field props
+    showInput = false,
+    inputValue = '',
+    inputPlaceholder = '',
+    inputType = 'text',
+    onInputChange = () => { }
 }) {
     if (!isOpen) return null;
 
@@ -18,6 +24,12 @@ export default function ConfirmModal({
             case 'danger': return 'confirm-btn-danger';
             case 'warning': return 'confirm-btn-warning';
             default: return 'confirm-btn-primary';
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && onConfirm) {
+            onConfirm();
         }
     };
 
@@ -43,6 +55,19 @@ export default function ConfirmModal({
                         <h3 className="confirm-title">{title}</h3>
                         <p className="confirm-message">{message}</p>
                     </div>
+
+                    {/* Input Field (optional) */}
+                    {showInput && (
+                        <input
+                            type={inputType}
+                            className="confirm-input"
+                            value={inputValue}
+                            onChange={(e) => onInputChange(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            placeholder={inputPlaceholder}
+                            autoFocus
+                        />
+                    )}
 
                     {/* Buttons */}
                     <div className="confirm-buttons">
