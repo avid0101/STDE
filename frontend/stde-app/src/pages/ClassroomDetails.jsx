@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import { useToast } from '../components/ToastContext';
+import ConfirmModal from '../components/ConfirmModal';
 import classroomService from "../services/classroomService";
 import documentService from "../services/documentService";
 import evaluationService from "../services/evaluationService";
@@ -28,6 +29,19 @@ export default function ClassroomDetails() {
   const [processingId, setProcessingId] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    isExiting: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    confirmStyle: 'primary',
+    onConfirm: null,
+    documentId: null
+  });
 
   const user = authService.getCurrentUser();
   const isTeacher = user?.userType === 'TEACHER';
@@ -99,12 +113,10 @@ export default function ClassroomDetails() {
     }
   };
 
-  // ... (Keep handleFileUpload, handleGoogleImport, pickerCallback from previous step)
-  // [OMITTED FOR BREVITY - PLEASE KEEP THE UPLOAD LOGIC]
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    setShowUploadModal(false); // Close modal immediately
+    setShowUploadModal(false);
     setUploading(true);
     const loadingId = toast.loading('Uploading Document. Please Wait.');
     try {
@@ -165,16 +177,31 @@ export default function ClassroomDetails() {
     } catch (error) { console.error("Error loading students:", error); }
   };
 
-  const handleAnalyze = async (documentId) => {
+  const handleAnalyze = (documentId) => {
     // Check usage stats before calling API (Optimistic UI check)
     if (usageStats && usageStats.remaining <= 0) {
       toast.warning(`Quota exceeded! Please wait ${Math.ceil(usageStats.resetInSeconds / 60)} minutes.`);
       return;
     }
 
-    if (!window.confirm("Run AI Analysis? This uses 1 quota token.")) return;
+    // Show confirmation modal
+    setConfirmModal({
+      isOpen: true,
+      isExiting: false,
+      title: 'Run AI Analysis',
+      message: 'This will use 1 quota token from your analysis limit. Do you want to proceed?',
+      confirmText: 'Run Analysis',
+      cancelText: 'Cancel',
+      confirmStyle: 'primary',
+      documentId: documentId,
+      onConfirm: () => executeAnalyze(documentId)
+    });
+  };
+
+  const executeAnalyze = async (documentId) => {
+    closeConfirmModal();
     setProcessingId(documentId);
-    const loadingId = toast.loading('Running AI Analysis...');
+    const loadingId = toast.loading('Running AI Analysis. Please Wait.');
     try {
       await evaluationService.evaluateDocument(documentId);
       toast.dismiss(loadingId);
@@ -189,9 +216,31 @@ export default function ClassroomDetails() {
     }
   };
 
+  // Close confirmation modal with animation
+  const closeConfirmModal = () => {
+    setConfirmModal(prev => ({ ...prev, isExiting: true }));
+    setTimeout(() => {
+      setConfirmModal(prev => ({ ...prev, isOpen: false, isExiting: false }));
+    }, 300);
+  };
+
   // ... (Keep other handlers: handleSubmit, handleViewReport, handleOverride, handleOpenDocument, getStatusStyle, handleOpenDrive)
-  const handleSubmit = async (documentId) => {
-    if (!window.confirm("Submit this document? You cannot change it afterwards.")) return;
+  const handleSubmit = (documentId) => {
+    setConfirmModal({
+      isOpen: true,
+      isExiting: false,
+      title: 'Submit Document',
+      message: 'Are you sure you want to submit this document? You cannot make changes after submission.',
+      confirmText: 'Submit',
+      cancelText: 'Cancel',
+      confirmStyle: 'warning',
+      documentId: documentId,
+      onConfirm: () => executeSubmit(documentId)
+    });
+  };
+
+  const executeSubmit = async (documentId) => {
+    closeConfirmModal();
     setProcessingId(documentId);
     try { await documentService.submitDocument(documentId); toast.success('Document submitted successfully!'); loadClassroomData(); } catch (error) { toast.error(error.message); } finally { setProcessingId(null); }
   };
@@ -403,6 +452,19 @@ export default function ClassroomDetails() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        isExiting={confirmModal.isExiting}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        confirmStyle={confirmModal.confirmStyle}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmModal}
+      />
     </>
   );
 }
