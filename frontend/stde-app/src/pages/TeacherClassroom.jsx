@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 import Sidebar from "../components/Sidebar";
+import ConfirmModal from "../components/ConfirmModal";
 import classroomService from "../services/classroomService";
 import { useToast } from '../components/ToastContext';
 import "../css/TeacherClassroom.css";
@@ -24,6 +25,19 @@ export default function TeacherClassroom() {
   const [classrooms, setClassrooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const toast = useToast();
+
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    isExiting: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    confirmStyle: 'danger',
+    onConfirm: null,
+    classId: null
+  });
 
   useEffect(() => {
     loadClassrooms();
@@ -73,16 +87,37 @@ export default function TeacherClassroom() {
     setShowModal(true);
   };
 
-  const handleDelete = async (e, id) => {
+  const handleDelete = (e, id) => {
     e.stopPropagation();
-    if (!window.confirm("Are you sure you want to delete this class? This will also delete the Google Drive folder.")) return;
+    setConfirmModal({
+      isOpen: true,
+      isExiting: false,
+      title: 'Delete Classroom',
+      message: 'Are you sure you want to delete this class? This will also delete the Google Drive folder.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      confirmStyle: 'danger',
+      classId: id,
+      onConfirm: () => executeDelete(id)
+    });
+  };
 
+  const executeDelete = async (id) => {
+    closeConfirmModal();
     try {
       await classroomService.deleteClassroom(id);
+      toast.success('Class deleted successfully!');
       loadClassrooms();
     } catch (err) {
       toast.error('Error deleting class: ' + err);
     }
+  };
+
+  const closeConfirmModal = () => {
+    setConfirmModal(prev => ({ ...prev, isExiting: true }));
+    setTimeout(() => {
+      setConfirmModal(prev => ({ ...prev, isOpen: false, isExiting: false }));
+    }, 300);
   };
 
   const handleSubmit = async (e) => {
@@ -247,6 +282,18 @@ export default function TeacherClassroom() {
           </div>
         )}
       </div>
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        isExiting={confirmModal.isExiting}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        confirmStyle={confirmModal.confirmStyle}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmModal}
+      />
     </>
   );
 }
